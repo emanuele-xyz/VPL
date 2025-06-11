@@ -266,7 +266,7 @@ static wrl::ComPtr<ID3D11Device> CreateD3D11Device()
     #if defined(_DEBUG)
     flags |= D3D11_CREATE_DEVICE_DEBUG;
     #endif
-    D3D_FEATURE_LEVEL requested_level{ D3D_FEATURE_LEVEL_11_1 };
+    D3D_FEATURE_LEVEL requested_level{ D3D_FEATURE_LEVEL_11_0 };
     D3D_FEATURE_LEVEL supported_level{};
 
     wrl::ComPtr<ID3D11Device> d3d_dev{};
@@ -346,7 +346,7 @@ static void Entry()
     // win32 initialization
     Check(SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE));
     RegisterWin32WindowClass();
-    [[maybe_unused]] HWND window{ CreateWin32Window() };
+    HWND window{ CreateWin32Window() };
 
     // d3d11 initialization
     SetupDXGIInforQueue();
