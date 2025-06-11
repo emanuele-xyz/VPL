@@ -41,6 +41,7 @@ constexpr DWORD WINDOW_STYLE{ WS_OVERLAPPEDWINDOW };
 constexpr DWORD WINDOW_STYLE_EX{ WS_EX_OVERLAPPEDWINDOW };
 constexpr int WINDOW_START_W{ 1280 };
 constexpr int WINDOW_START_H{ 720 };
+constexpr DXGI_FORMAT DEPTH_BUFFER_FORMAT{ DXGI_FORMAT_D32_FLOAT };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -187,6 +188,52 @@ static HWND CreateWin32Window()
 // D3D11 (and DXGI) API Helpers
 // ----------------------------------------------------------------------------
 
+class FrameBuffer
+{
+public:
+    FrameBuffer();
+    FrameBuffer(ID3D11Device* d3d_dev, IDXGISwapChain1* swap_chain);
+public:
+    ID3D11RenderTargetView* BackBufferRTV() const noexcept { return m_back_buffer_rtv.Get(); }
+    ID3D11DepthStencilView* DepthBufferDSV() const noexcept { return m_depth_buffer_dsv.Get(); }
+private:
+    wrl::ComPtr<ID3D11Texture2D> m_back_buffer;
+    wrl::ComPtr<ID3D11RenderTargetView> m_back_buffer_rtv;
+    wrl::ComPtr<ID3D11Texture2D> m_depth_buffer;
+    wrl::ComPtr<ID3D11DepthStencilView> m_depth_buffer_dsv;
+};
+
+FrameBuffer::FrameBuffer()
+    : m_back_buffer{}
+    , m_back_buffer_rtv{}
+    , m_depth_buffer{}
+    , m_depth_buffer_dsv{}
+{
+}
+
+FrameBuffer::FrameBuffer(ID3D11Device* d3d_dev, IDXGISwapChain1* swap_chain)
+{
+    // get swap chain back buffer handle
+    CheckHR(swap_chain->GetBuffer(0, IID_PPV_ARGS(m_back_buffer.ReleaseAndGetAddressOf())));
+
+    // create swap chain back buffer rtv
+    CheckHR(d3d_dev->CreateRenderTargetView(m_back_buffer.Get(), nullptr, m_back_buffer_rtv.ReleaseAndGetAddressOf()));
+
+    // get swap chain back buffer desc
+    D3D11_TEXTURE2D_DESC buffer_desc{};
+    m_back_buffer->GetDesc(&buffer_desc);
+
+    // adapt the buffer desc for the depth buffer
+    buffer_desc.Format = DEPTH_BUFFER_FORMAT;
+    buffer_desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+
+    // create depth buffer
+    CheckHR(d3d_dev->CreateTexture2D(&buffer_desc, nullptr, m_depth_buffer.ReleaseAndGetAddressOf()));
+
+    // create dsv from depth stencil buffer
+    CheckHR(d3d_dev->CreateDepthStencilView(m_depth_buffer.Get(), nullptr, m_depth_buffer_dsv.ReleaseAndGetAddressOf()));
+}
+
 static void SetupDXGIInforQueue()
 {
     #if defined(_DEBUG)
@@ -281,12 +328,12 @@ static wrl::ComPtr<IDXGISwapChain1> CreateDXGISwapChain(HWND window, ID3D11Devic
 
 static void Entry()
 {
-    // Win32 Initialization
+    // win32 initialization
     Check(SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_SYSTEM_AWARE));
     RegisterWin32WindowClass();
     [[maybe_unused]] HWND window{ CreateWin32Window() };
 
-    // D3D11 Initialization
+    // d3d11 initialization
     SetupDXGIInforQueue();
     wrl::ComPtr<ID3D11Device> d3d_dev{ CreateD3D11Device() };
     wrl::ComPtr<ID3D11DeviceContext> d3d_ctx{};
@@ -294,7 +341,10 @@ static void Entry()
     SetupD3D11InfoQueue(d3d_dev.Get());
     wrl::ComPtr<IDXGISwapChain1> swap_chain{ CreateDXGISwapChain(window, d3d_dev.Get()) };
 
-    // Main Loop
+    // frame buffer
+    FrameBuffer frame_buffer{ d3d_dev.Get(), swap_chain.Get() };
+
+    // main loop
     {
         MSG msg{};
         while (msg.message != WM_QUIT)
@@ -306,7 +356,20 @@ static void Entry()
             }
             else
             {
-                // TODO: Update Logic
+                // update
+                {
+                    // TODO
+                }
+
+                // rendering
+                {
+                    float clear_color[4]{ 0.1f, 0.2f, 0.6f, 1.0f };
+                    d3d_ctx->ClearRenderTargetView(frame_buffer.BackBufferRTV(), clear_color);
+                    d3d_ctx->ClearDepthStencilView(frame_buffer.DepthBufferDSV(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+                }
+
+                // signal the swapchain to present the current back buffer
+                CheckHR(swap_chain->Present(1, 0)); // use vsync
             }
         }
     }
