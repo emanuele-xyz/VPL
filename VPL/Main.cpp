@@ -41,6 +41,8 @@ constexpr DWORD WINDOW_STYLE{ WS_OVERLAPPEDWINDOW };
 constexpr DWORD WINDOW_STYLE_EX{ WS_EX_OVERLAPPEDWINDOW };
 constexpr int WINDOW_START_W{ 1280 };
 constexpr int WINDOW_START_H{ 720 };
+constexpr int WINDOW_MIN_W{ 8 };
+constexpr int WINDOW_MIN_H{ 8 };
 constexpr DXGI_FORMAT DEPTH_BUFFER_FORMAT{ DXGI_FORMAT_D32_FLOAT };
 
 // ----------------------------------------------------------------------------
@@ -56,12 +58,15 @@ public:
 };
 
 #if defined(_DEBUG)
-#define Check(p) do { if (!(p)) __debugbreak(); } while (false)
+#define Crash(msg) __debugbreak()
 #else
-#define Check(p) do { if (!(p)) throw Error(__FILE__, __LINE__, "check failed: " #p); } while (false)
+#define Crash(msg) throw Error(__FILE__, __LINE__, msg)
 #endif
 
+#define Check(p) do { if (!(p)) Crash("check failed: " #p); } while (false)
 #define CheckHR(hr) Check(SUCCEEDED(hr))
+
+#define Unreachable() Crash("unreachable code path")
 
 // ----------------------------------------------------------------------------
 // Miscellaneous Utilities
@@ -121,6 +126,8 @@ static std::string GetBytesStr(size_t bytes)
 // Window Procedure
 // ----------------------------------------------------------------------------
 
+static bool s_did_resize{};
+
 static LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     LRESULT result{};
@@ -129,6 +136,10 @@ static LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, 
     case WM_DESTROY:
     {
         PostQuitMessage(0);
+    } break;
+    case WM_SIZE:
+    {
+        s_did_resize = true;
     } break;
     default:
     {
@@ -191,8 +202,13 @@ static HWND CreateWin32Window()
 class FrameBuffer
 {
 public:
-    FrameBuffer();
     FrameBuffer(ID3D11Device* d3d_dev, IDXGISwapChain1* swap_chain);
+    FrameBuffer();
+    ~FrameBuffer() = default;
+    FrameBuffer(const FrameBuffer&) = delete;
+    FrameBuffer(FrameBuffer&&) noexcept = default;
+    FrameBuffer& operator=(const FrameBuffer&) = delete;
+    FrameBuffer& operator=(FrameBuffer&&) noexcept = default;
 public:
     ID3D11RenderTargetView* BackBufferRTV() const noexcept { return m_back_buffer_rtv.Get(); }
     ID3D11DepthStencilView* DepthBufferDSV() const noexcept { return m_depth_buffer_dsv.Get(); }
@@ -202,14 +218,6 @@ private:
     wrl::ComPtr<ID3D11Texture2D> m_depth_buffer;
     wrl::ComPtr<ID3D11DepthStencilView> m_depth_buffer_dsv;
 };
-
-FrameBuffer::FrameBuffer()
-    : m_back_buffer{}
-    , m_back_buffer_rtv{}
-    , m_depth_buffer{}
-    , m_depth_buffer_dsv{}
-{
-}
 
 FrameBuffer::FrameBuffer(ID3D11Device* d3d_dev, IDXGISwapChain1* swap_chain)
 {
@@ -234,6 +242,14 @@ FrameBuffer::FrameBuffer(ID3D11Device* d3d_dev, IDXGISwapChain1* swap_chain)
     CheckHR(d3d_dev->CreateDepthStencilView(m_depth_buffer.Get(), nullptr, m_depth_buffer_dsv.ReleaseAndGetAddressOf()));
 }
 
+FrameBuffer::FrameBuffer()
+    : m_back_buffer{}
+    , m_back_buffer_rtv{}
+    , m_depth_buffer{}
+    , m_depth_buffer_dsv{}
+{
+}
+
 static void SetupDXGIInforQueue()
 {
     #if defined(_DEBUG)
@@ -246,7 +262,6 @@ static void SetupDXGIInforQueue()
 
 static wrl::ComPtr<ID3D11Device> CreateD3D11Device()
 {
-
     UINT flags{};
     #if defined(_DEBUG)
     flags |= D3D11_CREATE_DEVICE_DEBUG;
@@ -356,6 +371,34 @@ static void Entry()
             }
             else
             {
+                // fetch current window width and height
+                int window_w{}, window_h{};
+                {
+                    RECT rect{};
+                    Check(GetClientRect(window, &rect));
+                    window_w = std::max(WINDOW_MIN_H, static_cast<int>(rect.right));
+                    window_h = std::max(WINDOW_MIN_W, static_cast<int>(rect.bottom));
+                }
+
+                // handle resize event
+                if (s_did_resize)
+                {
+                    // clear state (some resources may be implicitly referenced by the context)
+                    d3d_ctx->ClearState();
+
+                    // destroy frame buffer
+                    frame_buffer = {};
+
+                    // resize swap chain
+                    CheckHR(swap_chain->ResizeBuffers(0, window_w, window_h, DXGI_FORMAT_UNKNOWN, 0));
+
+                    // create new frame buffer
+                    frame_buffer = { d3d_dev.Get(), swap_chain.Get() };
+
+                    // resize event has been handled
+                    s_did_resize = false;
+                }
+
                 // update
                 {
                     // TODO
