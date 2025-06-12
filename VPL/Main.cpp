@@ -21,6 +21,14 @@ namespace wrl = Microsoft::WRL;
 #include <dxgidebug.h>
 #endif
 
+// Math library
+#include "SimpleMath.h"
+using Matrix = DirectX::SimpleMath::Matrix;
+using Vector2 = DirectX::SimpleMath::Vector2;
+using Vector3 = DirectX::SimpleMath::Vector3;
+using Vector4 = DirectX::SimpleMath::Vector4;
+using Quaternion = DirectX::SimpleMath::Quaternion;
+
 // ----------------------------------------------------------------------------
 // Libraries
 // ----------------------------------------------------------------------------
@@ -250,6 +258,127 @@ FrameBuffer::FrameBuffer()
 {
 }
 
+class Mesh
+{
+public:
+    static Mesh Quad(ID3D11Device* d3d_dev);
+public:
+    Mesh(ID3D11Device* d3d_dev, UINT vertex_count, UINT vertex_size, const void* vertices, UINT index_count, UINT index_size, const void* indices);
+    ~Mesh() = default;
+    Mesh(const Mesh&) = delete;
+    Mesh(Mesh&&) noexcept = default;
+    Mesh& operator=(const Mesh&) = delete;
+    Mesh& operator=(Mesh&&) noexcept = default;
+public:
+    ID3D11Buffer* const* Vertices() const noexcept { return m_vertices.GetAddressOf(); }
+    ID3D11Buffer* Indices() const noexcept { return m_indices.Get(); }
+    UINT VertexCount() const noexcept { return m_vertex_count; }
+    UINT IndexCount() const noexcept { return m_index_count; }
+    const UINT* Stride() const noexcept { return &m_stride; }
+    DXGI_FORMAT IndexFormat() const noexcept { return m_index_format; }
+private:
+    wrl::ComPtr<ID3D11Buffer> m_vertices;
+    wrl::ComPtr<ID3D11Buffer> m_indices;
+    UINT m_vertex_count;
+    UINT m_index_count;
+    UINT m_stride;
+    DXGI_FORMAT m_index_format;
+};
+
+Mesh Mesh::Quad(ID3D11Device* d3d_dev)
+{
+    struct Vertex
+    {
+        Vector3 position;
+        Vector3 normal;
+    };
+
+    /*
+        Local space quad vertex positions (we are on z = 0)
+        We suppose the quad's normal is (0, 0, 1)
+
+        (-0.5, +0.5)            (+0.5, +0.5)
+                    +----------+
+                    |          |
+                    |          |
+                    |          |
+                    |          |
+                    +----------+
+        (-0.5, -0.5)            (+0.5, -0.5)
+
+    */
+
+    Vertex vertices[]
+    {
+        { { +0.5f, +0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f } },
+        { { -0.5f, +0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f } },
+        { { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f } },
+        { { +0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f } },
+    };
+
+    UINT indices[]
+    {
+        0, 1, 2,
+        2, 3, 0,
+    };
+
+    return { d3d_dev, _countof(vertices), sizeof(*vertices), vertices, _countof(indices), sizeof(*indices), indices };
+}
+
+Mesh::Mesh(ID3D11Device* d3d_dev, UINT vertex_count, UINT vertex_size, const void* vertices, UINT index_count, UINT index_size, const void* indices)
+    : m_vertices{}
+    , m_indices{}
+    , m_vertex_count{ vertex_count }
+    , m_index_count{ index_count }
+    , m_stride{ vertex_size }
+    , m_index_format{}
+{
+    Check(vertex_count > 0);
+    Check(index_count > 0);
+    Check(vertex_size > 0);
+    Check(index_size > 0 && (index_size == 2 || index_size == 4));
+
+    // set index format based on index stride
+    switch (index_size)
+    {
+    case 2: { m_index_format = DXGI_FORMAT_R16_UINT; } break;
+    case 4: { m_index_format = DXGI_FORMAT_R32_UINT; } break;
+    default: { Unreachable(); } break;
+    }
+
+    // upload vertices to the GPU
+    {
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = m_vertex_count * vertex_size;
+        desc.Usage = D3D11_USAGE_IMMUTABLE;
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        desc.CPUAccessFlags = 0;
+        desc.MiscFlags = 0;
+        desc.StructureByteStride = 0;
+        D3D11_SUBRESOURCE_DATA data{};
+        data.pSysMem = vertices;
+        data.SysMemPitch = 0;
+        data.SysMemSlicePitch = 0;
+        CheckHR(d3d_dev->CreateBuffer(&desc, &data, m_vertices.ReleaseAndGetAddressOf()));
+    }
+
+    // upload indices to the GPU
+    {
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = m_index_count * index_size;
+        desc.Usage = D3D11_USAGE_IMMUTABLE;
+        desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+        desc.CPUAccessFlags = 0;
+        desc.MiscFlags = 0;
+        desc.StructureByteStride = 0;
+        D3D11_SUBRESOURCE_DATA data{};
+        data.pSysMem = indices;
+        data.SysMemPitch = 0;
+        data.SysMemSlicePitch = 0;
+        CheckHR(d3d_dev->CreateBuffer(&desc, &data, m_indices.ReleaseAndGetAddressOf()));
+    }
+}
+
 static void SetupDXGIInforQueue()
 {
     #if defined(_DEBUG)
@@ -358,6 +487,9 @@ static void Entry()
 
     // frame buffer
     FrameBuffer frame_buffer{ d3d_dev.Get(), swap_chain.Get() };
+
+    // meshes
+    Mesh quad{ Mesh::Quad(d3d_dev.Get()) };
 
     // main loop
     {
