@@ -29,6 +29,10 @@ using Vector3 = DirectX::SimpleMath::Vector3;
 using Vector4 = DirectX::SimpleMath::Vector4;
 using Quaternion = DirectX::SimpleMath::Quaternion;
 
+// Shaders bytecode
+#include "VS.h"
+#include "PSFlat.h"
+
 // ----------------------------------------------------------------------------
 // Libraries
 // ----------------------------------------------------------------------------
@@ -276,6 +280,7 @@ public:
     UINT IndexCount() const noexcept { return m_index_count; }
     const UINT* Stride() const noexcept { return &m_stride; }
     DXGI_FORMAT IndexFormat() const noexcept { return m_index_format; }
+    const UINT* Offset() const noexcept { return &m_offset; }
 private:
     wrl::ComPtr<ID3D11Buffer> m_vertices;
     wrl::ComPtr<ID3D11Buffer> m_indices;
@@ -283,6 +288,7 @@ private:
     UINT m_index_count;
     UINT m_stride;
     DXGI_FORMAT m_index_format;
+    UINT m_offset;
 };
 
 Mesh Mesh::Quad(ID3D11Device* d3d_dev)
@@ -332,6 +338,7 @@ Mesh::Mesh(ID3D11Device* d3d_dev, UINT vertex_count, UINT vertex_size, const voi
     , m_index_count{ index_count }
     , m_stride{ vertex_size }
     , m_index_format{}
+    , m_offset{}
 {
     Check(vertex_count > 0);
     Check(index_count > 0);
@@ -488,6 +495,47 @@ static void Entry()
     // frame buffer
     FrameBuffer frame_buffer{ d3d_dev.Get(), swap_chain.Get() };
 
+    // viewprot
+    D3D11_VIEWPORT viewport{};
+    viewport.TopLeftX = 0.0f;
+    viewport.TopLeftY = 0.0f;
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
+
+    // shaders
+    wrl::ComPtr<ID3D11VertexShader> vs{};
+    CheckHR(d3d_dev->CreateVertexShader(VS_bytes, sizeof(VS_bytes), nullptr, vs.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_flat{};
+    CheckHR(d3d_dev->CreatePixelShader(PSFlat_bytes, sizeof(PSFlat_bytes), nullptr, ps_flat.ReleaseAndGetAddressOf()));
+
+    // input layout
+    wrl::ComPtr<ID3D11InputLayout> input_layout{};
+    {
+        D3D11_INPUT_ELEMENT_DESC desc[] =
+        {
+            { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+            { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
+        };
+        CheckHR(d3d_dev->CreateInputLayout(desc, std::size(desc), VS_bytes, sizeof(VS_bytes), input_layout.ReleaseAndGetAddressOf()));
+    }
+
+    // rasterizer states
+    wrl::ComPtr<ID3D11RasterizerState> rs_default{};
+    {
+        D3D11_RASTERIZER_DESC desc{};
+        desc.FillMode = D3D11_FILL_SOLID;
+        desc.CullMode = D3D11_CULL_BACK;
+        desc.FrontCounterClockwise = true;
+        desc.DepthBias = 0;
+        desc.DepthBiasClamp = 0.0f;
+        desc.SlopeScaledDepthBias = 0.0f;
+        desc.DepthClipEnable = true;
+        desc.ScissorEnable = false;
+        desc.MultisampleEnable = false;
+        desc.AntialiasedLineEnable = false;
+        CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_default.ReleaseAndGetAddressOf()));
+    }
+
     // meshes
     Mesh quad{ Mesh::Quad(d3d_dev.Get()) };
 
@@ -538,9 +586,31 @@ static void Entry()
 
                 // rendering
                 {
-                    float clear_color[4]{ 0.1f, 0.2f, 0.6f, 1.0f };
-                    d3d_ctx->ClearRenderTargetView(frame_buffer.BackBufferRTV(), clear_color);
-                    d3d_ctx->ClearDepthStencilView(frame_buffer.DepthBufferDSV(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+                    ID3D11RenderTargetView* back_buffer_rtv{ frame_buffer.BackBufferRTV() };
+                    ID3D11DepthStencilView* back_buffer_dsv{ frame_buffer.DepthBufferDSV() };
+
+                    float clear_color[4]{ 0.2f, 0.3f, 0.3f, 1.0f };
+                    d3d_ctx->ClearRenderTargetView(back_buffer_rtv, clear_color);
+                    d3d_ctx->ClearDepthStencilView(back_buffer_dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
+
+                    // set viewport dimension
+                    viewport.Width = static_cast<float>(window_w);
+                    viewport.Height = static_cast<float>(window_h);
+
+                    // prepare pipeline for drawing
+                    d3d_ctx->ClearState();
+                    d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                    d3d_ctx->IASetInputLayout(input_layout.Get());
+                    d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
+                    d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                    d3d_ctx->RSSetState(rs_default.Get());
+                    d3d_ctx->RSSetViewports(1, &viewport);
+                    d3d_ctx->OMSetRenderTargets(1, &back_buffer_rtv, back_buffer_dsv);
+                    d3d_ctx->IASetIndexBuffer(quad.Indices(), quad.IndexFormat(), 0);
+                    d3d_ctx->IASetVertexBuffers(0, 1, quad.Vertices(), quad.Stride(), quad.Offset());
+
+                    // draw
+                    d3d_ctx->DrawIndexed(quad.IndexCount(), 0, 0);
                 }
 
                 // signal the swapchain to present the current back buffer

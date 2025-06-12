@@ -37,5 +37,10 @@
     <None Include="SimpleMath.inl">
       <Filter>Header Files</Filter>
     </None>
+    <None Include="Commons.hlsli" />
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="PSFlat.hlsl" />
+    <FxCompile Include="VS.hlsl" />
   </ItemGroup>
 </Project>
