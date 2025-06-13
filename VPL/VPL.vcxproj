@@ -122,6 +122,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Commons.hlsli" />
+    <None Include="ConstantBuffers.hlsli" />
     <None Include="SimpleMath.inl" />
   </ItemGroup>
   <ItemGroup>

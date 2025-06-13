@@ -33,6 +33,17 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 #include "VS.h"
 #include "PSFlat.h"
 
+// Constant buffers
+#define float2 Vector2
+#define float3 Vector3
+#define float4 Vector4
+#define matrix Matrix
+#include "ConstantBuffers.hlsli"
+#undef float2
+#undef float3
+#undef float4
+#undef matrix
+
 // ----------------------------------------------------------------------------
 // Libraries
 // ----------------------------------------------------------------------------
@@ -386,6 +397,38 @@ Mesh::Mesh(ID3D11Device* d3d_dev, UINT vertex_count, UINT vertex_size, const voi
     }
 }
 
+class SubresourceMap
+{
+public:
+    SubresourceMap(ID3D11DeviceContext* context, ID3D11Resource* resource, UINT subresource_idx, D3D11_MAP map_type, UINT map_flags);
+    ~SubresourceMap();
+    SubresourceMap(const SubresourceMap&) = delete;
+    SubresourceMap(SubresourceMap&&) noexcept = delete;
+    SubresourceMap& operator=(const SubresourceMap&) = delete;
+    SubresourceMap& operator=(SubresourceMap&&) noexcept = delete;
+public:
+    void* Data() { return m_mapped_subresource.pData; }
+private:
+    ID3D11DeviceContext* m_context;
+    ID3D11Resource* m_resource;
+    UINT m_subresource_idx;
+    D3D11_MAPPED_SUBRESOURCE m_mapped_subresource;
+};
+
+SubresourceMap::SubresourceMap(ID3D11DeviceContext* context, ID3D11Resource* resource, UINT subresource_idx, D3D11_MAP map_type, UINT map_flags)
+    : m_context{ context }
+    , m_resource{ resource }
+    , m_subresource_idx{ subresource_idx }
+    , m_mapped_subresource{}
+{
+    CheckHR(context->Map(resource, subresource_idx, map_type, map_flags, &m_mapped_subresource));
+}
+
+SubresourceMap::~SubresourceMap()
+{
+    m_context->Unmap(m_resource, m_subresource_idx);
+}
+
 static void SetupDXGIInforQueue()
 {
     #if defined(_DEBUG)
@@ -536,8 +579,27 @@ static void Entry()
         CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_default.ReleaseAndGetAddressOf()));
     }
 
+    // object constant buffer
+    wrl::ComPtr<ID3D11Buffer> cb_object{};
+    {
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = sizeof(ObjectConstants);
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        desc.MiscFlags = 0;
+        desc.StructureByteStride = 0;
+
+        CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_object.ReleaseAndGetAddressOf()));
+    }
+
     // meshes
     Mesh quad{ Mesh::Quad(d3d_dev.Get()) };
+
+    // TODO: to be removed
+    Vector3 quad_position{};
+    Vector3 quad_rotation{ 0.0f, 0.0f, 0.0f };
+    Vector3 quad_scaling{ 1.0f, 1.0f, 1.0f };
 
     // main loop
     {
@@ -598,16 +660,46 @@ static void Entry()
                     viewport.Height = static_cast<float>(window_h);
 
                     // prepare pipeline for drawing
-                    d3d_ctx->ClearState();
-                    d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                    d3d_ctx->IASetInputLayout(input_layout.Get());
-                    d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
-                    d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
-                    d3d_ctx->RSSetState(rs_default.Get());
-                    d3d_ctx->RSSetViewports(1, &viewport);
-                    d3d_ctx->OMSetRenderTargets(1, &back_buffer_rtv, back_buffer_dsv);
-                    d3d_ctx->IASetIndexBuffer(quad.Indices(), quad.IndexFormat(), 0);
-                    d3d_ctx->IASetVertexBuffers(0, 1, quad.Vertices(), quad.Stride(), quad.Offset());
+                    {
+                        ID3D11Buffer* cbufs[]{ cb_object.Get() };
+
+                        d3d_ctx->ClearState();
+                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        d3d_ctx->IASetInputLayout(input_layout.Get());
+                        d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
+                        d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
+                        d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                        d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
+                        d3d_ctx->RSSetState(rs_default.Get());
+                        d3d_ctx->RSSetViewports(1, &viewport);
+                        d3d_ctx->OMSetRenderTargets(1, &back_buffer_rtv, back_buffer_dsv);
+                        d3d_ctx->IASetIndexBuffer(quad.Indices(), quad.IndexFormat(), 0);
+                        d3d_ctx->IASetVertexBuffers(0, 1, quad.Vertices(), quad.Stride(), quad.Offset());
+                    }
+
+                    // upload object constants
+                    {
+                        Vector3 rotation_rad{};
+                        rotation_rad.x = DirectX::XMConvertToRadians(quad_rotation.x);
+                        rotation_rad.y = DirectX::XMConvertToRadians(quad_rotation.y);
+                        rotation_rad.z = DirectX::XMConvertToRadians(quad_rotation.z);
+
+                        Matrix translate{ Matrix::CreateTranslation(quad_position) };
+                        Matrix rotate{ Matrix::CreateFromYawPitchRoll(rotation_rad) };
+                        Matrix scale{ Matrix::CreateScale(quad_scaling) };
+                        Matrix model{ scale * rotate * translate };
+                        Matrix normal{ scale * rotate };
+                        normal.Invert();
+                        normal.Transpose();
+
+                        Vector3 albedo{ 1.0f, 0.0f, 0.0f };
+
+                        SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                        auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                        constants->model = model;
+                        constants->normal = normal;
+                        constants->albedo = albedo;
+                    }
 
                     // draw
                     d3d_ctx->DrawIndexed(quad.IndexCount(), 0, 0);

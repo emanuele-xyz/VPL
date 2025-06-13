@@ -38,6 +38,7 @@
       <Filter>Header Files</Filter>
     </None>
     <None Include="Commons.hlsli" />
+    <None Include="ConstantBuffers.hlsli" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="PSFlat.hlsl" />
