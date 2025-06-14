@@ -553,7 +553,7 @@ ImGuiHandle::ImGuiHandle(HWND window, ID3D11Device* d3d_dev, ID3D11DeviceContext
     ImGui::CreateContext();
 
     // setup ImGui style
-    ImGui::StyleColorsLight();
+    ImGui::StyleColorsDark();
 
     // setup platform/renderer backends
     ImGui_ImplWin32_Init(window);
