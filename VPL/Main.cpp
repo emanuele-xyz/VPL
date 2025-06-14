@@ -156,23 +156,33 @@ static std::string GetBytesStr(size_t bytes)
 
 static bool s_did_resize{};
 
-static LRESULT CALLBACK WindowProcedure(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+// Forward declare message handler from imgui_impl_win32.cpp
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
+
+static LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     LRESULT result{};
-    switch (message)
+    if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wparam, lparam))
     {
-    case WM_DESTROY:
+        result = 1;
+    }
+    else
     {
-        PostQuitMessage(0);
-    } break;
-    case WM_SIZE:
-    {
-        s_did_resize = true;
-    } break;
-    default:
-    {
-        result = DefWindowProcA(hWnd, message, wParam, lParam);
-    } break;
+        switch (msg)
+        {
+        case WM_DESTROY:
+        {
+            PostQuitMessage(0);
+        } break;
+        case WM_SIZE:
+        {
+            s_did_resize = true;
+        } break;
+        default:
+        {
+            result = DefWindowProcA(hwnd, msg, wparam, lparam);
+        } break;
+        }
     }
     return result;
 }
