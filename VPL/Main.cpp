@@ -668,6 +668,7 @@ static void Entry()
     Vector3 quad_position{};
     Vector3 quad_rotation{ 0.0f, 0.0f, 0.0f };
     Vector3 quad_scaling{ 1.0f, 1.0f, 1.0f };
+    Vector3 quad_albedo{ 1.0f, 0.0f, 0.0f };
 
     // main loop
     {
@@ -760,13 +761,11 @@ static void Entry()
                         normal.Invert();
                         normal.Transpose();
 
-                        Vector3 albedo{ 1.0f, 0.0f, 0.0f };
-
                         SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                         auto constants{ static_cast<ObjectConstants*>(map.Data()) };
                         constants->model = model;
                         constants->normal = normal;
-                        constants->albedo = albedo;
+                        constants->albedo = quad_albedo;
                     }
 
                     // draw
@@ -795,6 +794,12 @@ static void Entry()
                             float scaling[3]{ quad_scaling.x, quad_scaling.y, quad_scaling.z };
                             ImGui::DragFloat3("Scaling", scaling, 0.01f);
                             quad_scaling = { scaling[0], scaling[1], scaling[2] };
+                        }
+                        // albedo
+                        {
+                            float color[3]{ quad_albedo.x, quad_albedo.y, quad_albedo.z };
+                            ImGui::ColorEdit3("Albedo", color);
+                            quad_albedo = { color[0], color[1], color[2] };
                         }
                     }
                     ImGui::End();
