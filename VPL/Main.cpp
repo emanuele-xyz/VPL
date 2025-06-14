@@ -776,9 +776,26 @@ static void Entry()
                 // render ui
                 StartNewImGuiFrame();
                 {
-                    ImGui::Begin("Hello!");
+                    ImGui::Begin("Quad");
                     {
-                        ImGui::Text("Hello from ImGui!");
+                        // position editor
+                        {
+                            float position[3]{ quad_position.x, quad_position.y, quad_position.z };
+                            ImGui::DragFloat3("Position", position, 0.01f);
+                            quad_position = { position[0], position[1], position[2] };
+                        }
+                        // rotation editor
+                        {
+                            float rotation[3]{ quad_rotation.x, quad_rotation.y, quad_rotation.z };
+                            ImGui::DragFloat3("Rotation", rotation, 0.1f, 0.0f, 360.0f);
+                            quad_rotation = { rotation[0], rotation[1], rotation[2] };
+                        }
+                        // scaling editor
+                        {
+                            float scaling[3]{ quad_scaling.x, quad_scaling.y, quad_scaling.z };
+                            ImGui::DragFloat3("Scaling", scaling, 0.01f);
+                            quad_scaling = { scaling[0], scaling[1], scaling[2] };
+                        }
                     }
                     ImGui::End();
                 }
