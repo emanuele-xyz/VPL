@@ -415,33 +415,33 @@ Mesh::Mesh(ID3D11Device* d3d_dev, UINT vertex_count, UINT vertex_size, const voi
 class SubresourceMap
 {
 public:
-    SubresourceMap(ID3D11DeviceContext* context, ID3D11Resource* resource, UINT subresource_idx, D3D11_MAP map_type, UINT map_flags);
+    SubresourceMap(ID3D11DeviceContext* d3d_ctx, ID3D11Resource* res, UINT subres_idx, D3D11_MAP map_type, UINT map_flags);
     ~SubresourceMap();
     SubresourceMap(const SubresourceMap&) = delete;
     SubresourceMap(SubresourceMap&&) noexcept = delete;
     SubresourceMap& operator=(const SubresourceMap&) = delete;
     SubresourceMap& operator=(SubresourceMap&&) noexcept = delete;
 public:
-    void* Data() { return m_mapped_subresource.pData; }
+    void* Data() { return m_mapped_subres.pData; }
 private:
-    ID3D11DeviceContext* m_context;
-    ID3D11Resource* m_resource;
-    UINT m_subresource_idx;
-    D3D11_MAPPED_SUBRESOURCE m_mapped_subresource;
+    ID3D11DeviceContext* m_d3d_ctx;
+    ID3D11Resource* m_res;
+    UINT m_subres_idx;
+    D3D11_MAPPED_SUBRESOURCE m_mapped_subres;
 };
 
-SubresourceMap::SubresourceMap(ID3D11DeviceContext* context, ID3D11Resource* resource, UINT subresource_idx, D3D11_MAP map_type, UINT map_flags)
-    : m_context{ context }
-    , m_resource{ resource }
-    , m_subresource_idx{ subresource_idx }
-    , m_mapped_subresource{}
+SubresourceMap::SubresourceMap(ID3D11DeviceContext* d3d_ctx, ID3D11Resource* res, UINT subres_idx, D3D11_MAP map_type, UINT map_flags)
+    : m_d3d_ctx{ d3d_ctx }
+    , m_res{ res }
+    , m_subres_idx{ subres_idx }
+    , m_mapped_subres{}
 {
-    CheckHR(context->Map(resource, subresource_idx, map_type, map_flags, &m_mapped_subresource));
+    CheckHR(m_d3d_ctx->Map(m_res, m_subres_idx, map_type, map_flags, &m_mapped_subres));
 }
 
 SubresourceMap::~SubresourceMap()
 {
-    m_context->Unmap(m_resource, m_subresource_idx);
+    m_d3d_ctx->Unmap(m_res, m_subres_idx);
 }
 
 static void SetupDXGIInforQueue()
