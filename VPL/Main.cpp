@@ -72,9 +72,16 @@ constexpr int WINDOW_START_H{ 720 };
 constexpr int WINDOW_MIN_W{ 8 };
 constexpr int WINDOW_MIN_H{ 8 };
 constexpr DXGI_FORMAT DEPTH_BUFFER_FORMAT{ DXGI_FORMAT_D32_FLOAT };
+constexpr float CAMERA_START_YAW_DEG{ -90.0f };
+constexpr float CAMERA_START_PITCH_DEG{ 0.0f };
+constexpr float CAMERA_MIN_PITCH_DEG{ -89.0f };
+constexpr float CAMERA_MAX_PITCH_DEG{ +89.0f };
 constexpr float CAMERA_FOV_DEG{ 45.0f };
 constexpr float CAMERA_NEAR_PLANE{ 0.01f };
 constexpr float CAMERA_FAR_PLANE{ 100.0f };
+constexpr float CAMERA_MOVE_SPEED{ 10.0f };
+constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
+constexpr float MOUSE_SENSITIVITY{ 5.0f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -159,6 +166,18 @@ static std::string GetBytesStr(size_t bytes)
 
 static bool s_did_resize{};
 
+// keyboard state
+static bool s_keyboard[0xFF]{}; // read here for details: https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+
+// mouse state
+static struct
+{
+    bool left, right;
+    struct { int x, y; } current;
+    struct { int x, y; } previous;
+    int dx, dy;
+} s_mouse{};
+
 // Forward declare message handler from imgui_impl_win32.cpp
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
 
@@ -173,6 +192,42 @@ static LRESULT CALLBACK WindowProcedure(HWND hwnd, UINT msg, WPARAM wparam, LPAR
     {
         switch (msg)
         {
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        {
+            ImGuiIO& io{ ImGui::GetIO() };
+            if (!io.WantCaptureKeyboard)
+            {
+                s_keyboard[wparam] = (msg == WM_KEYDOWN);
+            }
+        } break;
+        case WM_LBUTTONDOWN:
+        case WM_LBUTTONUP:
+        {
+            ImGuiIO& io{ ImGui::GetIO() };
+            if (!io.WantCaptureMouse)
+            {
+                s_mouse.left = (msg == WM_LBUTTONDOWN);
+            }
+        } break;
+        case WM_RBUTTONDOWN:
+        case WM_RBUTTONUP:
+        {
+            ImGuiIO& io{ ImGui::GetIO() };
+            if (!io.WantCaptureMouse)
+            {
+                s_mouse.right = (msg == WM_RBUTTONDOWN);
+            }
+        } break;
+        case WM_MOUSEMOVE:
+        {
+            ImGuiIO& io{ ImGui::GetIO() };
+            if (!io.WantCaptureMouse)
+            {
+                s_mouse.current.x = GET_X_LPARAM(lparam);
+                s_mouse.current.y = GET_Y_LPARAM(lparam);
+            }
+        } break;
         case WM_DESTROY:
         {
             PostQuitMessage(0);
@@ -234,6 +289,26 @@ static HWND CreateWin32Window()
     ShowWindow(hwnd, SW_SHOW);
 
     return hwnd;
+}
+
+LARGE_INTEGER GetWin32PerformanceCounter()
+{
+    LARGE_INTEGER perf{};
+    Check(QueryPerformanceCounter(&perf));
+    return perf;
+}
+
+LARGE_INTEGER GetWin32PerformanceFrequency()
+{
+    LARGE_INTEGER freq{};
+    Check(QueryPerformanceFrequency(&freq));
+    return freq;
+}
+
+float GetElapsedSec(LARGE_INTEGER t0, LARGE_INTEGER t1, LARGE_INTEGER frequency)
+{
+    float elapsed_sec{ static_cast<float>(t1.QuadPart - t0.QuadPart) / static_cast<float>(frequency.QuadPart) };
+    return elapsed_sec;
 }
 
 // ----------------------------------------------------------------------------
@@ -591,6 +666,8 @@ static void RenderImGuiFrame(ID3D11DeviceContext* d3d_ctx, ID3D11RenderTargetVie
 struct Camera
 {
     Vector3 eye;
+    float yaw_deg;
+    float pitch_deg;
     float fov_deg;
     float near_plane;
     float far_plane;
@@ -696,6 +773,8 @@ static void Entry()
     // camera
     Camera camera{};
     camera.eye = { 0.0f, 2.0f, 10.0f };
+    camera.yaw_deg = CAMERA_START_YAW_DEG;
+    camera.pitch_deg = CAMERA_START_PITCH_DEG;
     camera.fov_deg = CAMERA_FOV_DEG;
     camera.near_plane = CAMERA_NEAR_PLANE;
     camera.far_plane = CAMERA_FAR_PLANE;
@@ -706,6 +785,12 @@ static void Entry()
     Vector3 quad_rotation{ 0.0f, 0.0f, 0.0f };
     Vector3 quad_scaling{ 1.0f, 1.0f, 1.0f };
     Vector3 quad_albedo{ 1.0f, 0.0f, 0.0f };
+
+    // time data
+    const LARGE_INTEGER performance_counter_frequency{ GetWin32PerformanceFrequency() };
+    LARGE_INTEGER frame_timestamp{ GetWin32PerformanceCounter() };
+    float frame_t_sec{};
+    float frame_dt_sec{};
 
     // main loop
     {
@@ -719,6 +804,17 @@ static void Entry()
             }
             else
             {
+                // update input state
+                {
+                    // compute mouse delta
+                    s_mouse.dx = s_mouse.current.x - s_mouse.previous.x;
+                    s_mouse.dy = s_mouse.current.y - s_mouse.previous.y;
+
+                    // update previous mouse position
+                    s_mouse.previous.x = s_mouse.current.x;
+                    s_mouse.previous.y = s_mouse.current.y;
+                }
+
                 // fetch current window width and height
                 int window_w{}, window_h{};
                 {
@@ -747,9 +843,58 @@ static void Entry()
                     s_did_resize = false;
                 }
 
-                // update
+                // update logic
                 {
-                    // TODO
+                    // update camera
+                    {
+                        // update camera yaw and pitch, only when the RIGHT MOUSE BUTTON is pressed
+                        if (s_mouse.right)
+                        {
+                            camera.yaw_deg += s_mouse.dx * frame_dt_sec * MOUSE_SENSITIVITY;
+                            camera.pitch_deg -= s_mouse.dy * frame_dt_sec * MOUSE_SENSITIVITY;
+                            camera.pitch_deg = std::clamp(camera.pitch_deg, CAMERA_MIN_PITCH_DEG, CAMERA_MAX_PITCH_DEG);
+                        }
+
+                        // compute camera forward from yaw and pitch
+                        Vector3 camera_forward{};
+                        {
+                            const float yaw_rad{ DirectX::XMConvertToRadians(camera.yaw_deg) };
+                            const float pitch_rad{ DirectX::XMConvertToRadians(camera.pitch_deg) };
+                            camera_forward.x = std::cos(yaw_rad) * std::cos(pitch_rad);
+                            camera_forward.y = std::sin(pitch_rad);
+                            camera_forward.z = std::sin(yaw_rad) * std::cos(pitch_rad);
+                            camera_forward.Normalize();
+                        }
+
+                        Vector3 camera_right{ camera_forward.Cross({0.0f, 1.0f, 0.0f}) };
+                        camera_right.Normalize();
+
+                        // move camera based on WASD keys
+                        {
+                            Vector3 move{};
+                            if (s_keyboard['W']) // forward
+                            {
+                                move += camera_forward;
+                            }
+                            if (s_keyboard['S']) // backwards
+                            {
+                                move -= camera_forward;
+                            }
+                            if (s_keyboard['A']) // left
+                            {
+                                move -= camera_right;
+                            }
+                            if (s_keyboard['D']) // right
+                            {
+                                move += camera_right;
+                            }
+                            move.Normalize();
+
+                            float speed_multipler{ s_keyboard[VK_SHIFT] ? CAMERA_MOVE_SPEED_MULTIPLIER : 1.0f };
+                            camera.eye += move * CAMERA_MOVE_SPEED * speed_multipler * frame_dt_sec;
+                            camera.target = camera.eye + camera_forward;
+                        }
+                    }
                 }
 
                 // render scene
@@ -857,6 +1002,14 @@ static void Entry()
                 // present
                 {
                     CheckHR(swap_chain->Present(1, 0)); // use vsync
+                }
+
+                // update frame time data
+                {
+                    LARGE_INTEGER timestamp{ GetWin32PerformanceCounter() };
+                    frame_dt_sec = GetElapsedSec(frame_timestamp, timestamp, performance_counter_frequency);
+                    frame_t_sec += frame_dt_sec;
+                    frame_timestamp = timestamp;
                 }
             }
         }
