@@ -370,6 +370,7 @@ class Mesh
 {
 public:
     static Mesh Quad(ID3D11Device* d3d_dev);
+    static Mesh Cube(ID3D11Device* d3d_dev);
 public:
     Mesh(ID3D11Device* d3d_dev, UINT vertex_count, UINT vertex_size, const void* vertices, UINT index_count, UINT index_size, const void* indices);
     ~Mesh() = default;
@@ -430,6 +431,83 @@ Mesh Mesh::Quad(ID3D11Device* d3d_dev)
     {
         0, 1, 2,
         2, 3, 0,
+    };
+
+    return { d3d_dev, _countof(vertices), sizeof(*vertices), vertices, _countof(indices), sizeof(*indices), indices };
+}
+
+Mesh Mesh::Cube(ID3D11Device* d3d_dev)
+{
+    struct Vertex
+    {
+        Vector3 position;
+        Vector3 normal;
+    };
+
+    Vertex vertices[]
+    {
+        // front face (Z+)
+        { { -0.5f, -0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } },
+        { { +0.5f, -0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } },
+        { { +0.5f, +0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } },
+        { { -0.5f, +0.5f, +0.5f }, { 0.0f, 0.0f, 1.0f } },
+
+        // back face (Z-)
+        { { +0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } },
+        { { -0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } },
+        { { -0.5f, +0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } },
+        { { +0.5f, +0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } },
+
+        // left face (X-)
+        { { -0.5f, -0.5f, -0.5f }, { -1.0f, 0.0f, 0.0f } },
+        { { -0.5f, -0.5f, +0.5f }, { -1.0f, 0.0f, 0.0f } },
+        { { -0.5f, +0.5f, +0.5f }, { -1.0f, 0.0f, 0.0f } },
+        { { -0.5f, +0.5f, -0.5f }, { -1.0f, 0.0f, 0.0f } },
+
+        // right face (X+)
+        { { +0.5f, -0.5f, +0.5f }, { +1.0f, 0.0f, 0.0f } },
+        { { +0.5f, -0.5f, -0.5f }, { +1.0f, 0.0f, 0.0f } },
+        { { +0.5f, +0.5f, -0.5f }, { +1.0f, 0.0f, 0.0f } },
+        { { +0.5f, +0.5f, +0.5f }, { +1.0f, 0.0f, 0.0f } },
+
+        // top face (Y+)
+        { { -0.5f, +0.5f, +0.5f }, { 0.0f, +1.0f, 0.0f } },
+        { { +0.5f, +0.5f, +0.5f }, { 0.0f, +1.0f, 0.0f } },
+        { { +0.5f, +0.5f, -0.5f }, { 0.0f, +1.0f, 0.0f } },
+        { { -0.5f, +0.5f, -0.5f }, { 0.0f, +1.0f, 0.0f } },
+
+        // bottom face (Y-)
+        { { -0.5f, -0.5f, -0.5f }, { 0.0f, -1.0f, 0.0f } },
+        { { +0.5f, -0.5f, -0.5f }, { 0.0f, -1.0f, 0.0f } },
+        { { +0.5f, -0.5f, +0.5f }, { 0.0f, -1.0f, 0.0f } },
+        { { -0.5f, -0.5f, +0.5f }, { 0.0f, -1.0f, 0.0f } },
+    };
+
+    UINT indices[]
+    {
+        // front
+        0, 1, 2,
+        0, 2, 3,
+
+        // back
+        4, 5, 6,
+        4, 6, 7,
+
+        // left
+        8, 9,10,
+        8,10,11,
+
+        // right
+        12,13,14,
+        12,14,15,
+
+        // top 
+        16,17,18,
+        16,18,19,
+
+        // bottom
+        20,21,22,
+        20,22,23
     };
 
     return { d3d_dev, _countof(vertices), sizeof(*vertices), vertices, _countof(indices), sizeof(*indices), indices };
@@ -766,6 +844,7 @@ static void Entry()
 
     // meshes
     Mesh quad{ Mesh::Quad(d3d_dev.Get()) };
+    Mesh cube{ Mesh::Cube(d3d_dev.Get()) };
 
     // ImGui handle
     ImGuiHandle imgui_handle{ window, d3d_dev.Get(), d3d_ctx.Get() };
@@ -924,8 +1003,10 @@ static void Entry()
                         d3d_ctx->RSSetState(rs_default.Get());
                         d3d_ctx->RSSetViewports(1, &viewport);
                         d3d_ctx->OMSetRenderTargets(1, &back_buffer_rtv, back_buffer_dsv);
-                        d3d_ctx->IASetIndexBuffer(quad.Indices(), quad.IndexFormat(), 0);
-                        d3d_ctx->IASetVertexBuffers(0, 1, quad.Vertices(), quad.Stride(), quad.Offset());
+                        //d3d_ctx->IASetIndexBuffer(quad.Indices(), quad.IndexFormat(), 0);
+                        //d3d_ctx->IASetVertexBuffers(0, 1, quad.Vertices(), quad.Stride(), quad.Offset());
+                        d3d_ctx->IASetIndexBuffer(cube.Indices(), cube.IndexFormat(), 0);
+                        d3d_ctx->IASetVertexBuffers(0, 1, cube.Vertices(), cube.Stride(), cube.Offset());
                     }
 
                     // upload scene constants
@@ -962,7 +1043,8 @@ static void Entry()
                     }
 
                     // draw
-                    d3d_ctx->DrawIndexed(quad.IndexCount(), 0, 0);
+                    //d3d_ctx->DrawIndexed(quad.IndexCount(), 0, 0);
+                    d3d_ctx->DrawIndexed(cube.IndexCount(), 0, 0);
                 }
 
                 // render ui
