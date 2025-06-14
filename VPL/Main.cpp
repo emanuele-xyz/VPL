@@ -29,6 +29,11 @@ using Vector3 = DirectX::SimpleMath::Vector3;
 using Vector4 = DirectX::SimpleMath::Vector4;
 using Quaternion = DirectX::SimpleMath::Quaternion;
 
+// ImGui
+#include "imgui.h"
+#include "imgui_impl_win32.h"
+#include "imgui_impl_dx11.h"
+
 // Shaders bytecode
 #include "VS.h"
 #include "PSFlat.h"
@@ -517,6 +522,56 @@ static wrl::ComPtr<IDXGISwapChain1> CreateDXGISwapChain(HWND window, ID3D11Devic
 }
 
 // ----------------------------------------------------------------------------
+// ImGui API Helpers
+// ----------------------------------------------------------------------------
+
+class ImGuiHandle
+{
+public:
+    ImGuiHandle(HWND window, ID3D11Device* d3d_dev, ID3D11DeviceContext* d3d_ctx);
+    ~ImGuiHandle();
+    ImGuiHandle(const ImGuiHandle&) = delete;
+    ImGuiHandle(ImGuiHandle&&) noexcept = delete;
+    ImGuiHandle& operator=(const ImGuiHandle&) = delete;
+    ImGuiHandle& operator=(ImGuiHandle&&) noexcept = delete;
+};
+
+ImGuiHandle::ImGuiHandle(HWND window, ID3D11Device* d3d_dev, ID3D11DeviceContext* d3d_ctx)
+{
+    // setup ImGui context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+
+    // setup ImGui style
+    ImGui::StyleColorsLight();
+
+    // setup platform/renderer backends
+    ImGui_ImplWin32_Init(window);
+    ImGui_ImplDX11_Init(d3d_dev, d3d_ctx);
+}
+
+ImGuiHandle::~ImGuiHandle()
+{
+    ImGui_ImplDX11_Shutdown();
+    ImGui_ImplWin32_Shutdown();
+    ImGui::DestroyContext();
+}
+
+static void StartNewImGuiFrame()
+{
+    ImGui_ImplDX11_NewFrame();
+    ImGui_ImplWin32_NewFrame();
+    ImGui::NewFrame();
+}
+
+static void RenderImGuiFrame(ID3D11DeviceContext* d3d_ctx, ID3D11RenderTargetView* rtv)
+{
+    ImGui::Render();
+    d3d_ctx->OMSetRenderTargets(1, &rtv, nullptr);
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+}
+
+// ----------------------------------------------------------------------------
 // Application's Entry Point (may throw an exception)
 // ----------------------------------------------------------------------------
 
@@ -596,6 +651,9 @@ static void Entry()
     // meshes
     Mesh quad{ Mesh::Quad(d3d_dev.Get()) };
 
+    // ImGui handle
+    ImGuiHandle imgui_handle{ window, d3d_dev.Get(), d3d_ctx.Get() };
+
     // TODO: to be removed
     Vector3 quad_position{};
     Vector3 quad_rotation{ 0.0f, 0.0f, 0.0f };
@@ -646,7 +704,7 @@ static void Entry()
                     // TODO
                 }
 
-                // rendering
+                // render scene
                 {
                     ID3D11RenderTargetView* back_buffer_rtv{ frame_buffer.BackBufferRTV() };
                     ID3D11DepthStencilView* back_buffer_dsv{ frame_buffer.DepthBufferDSV() };
@@ -705,8 +763,21 @@ static void Entry()
                     d3d_ctx->DrawIndexed(quad.IndexCount(), 0, 0);
                 }
 
-                // signal the swapchain to present the current back buffer
-                CheckHR(swap_chain->Present(1, 0)); // use vsync
+                // render ui
+                StartNewImGuiFrame();
+                {
+                    ImGui::Begin("Hello!");
+                    {
+                        ImGui::Text("Hello from ImGui!");
+                    }
+                    ImGui::End();
+                }
+                RenderImGuiFrame(d3d_ctx.Get(), frame_buffer.BackBufferRTV());
+
+                // present
+                {
+                    CheckHR(swap_chain->Present(1, 0)); // use vsync
+                }
             }
         }
     }

@@ -365,3 +365,6 @@ FodyWeavers.xsd
 # Shaders bytecode
 VS.h
 PSFlat.h
+
+# ImGui configuration file
+imgui.ini
