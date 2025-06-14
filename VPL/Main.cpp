@@ -72,6 +72,9 @@ constexpr int WINDOW_START_H{ 720 };
 constexpr int WINDOW_MIN_W{ 8 };
 constexpr int WINDOW_MIN_H{ 8 };
 constexpr DXGI_FORMAT DEPTH_BUFFER_FORMAT{ DXGI_FORMAT_D32_FLOAT };
+constexpr float CAMERA_FOV_DEG{ 45.0f };
+constexpr float CAMERA_NEAR_PLANE{ 0.01f };
+constexpr float CAMERA_FAR_PLANE{ 100.0f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -582,6 +585,19 @@ static void RenderImGuiFrame(ID3D11DeviceContext* d3d_ctx, ID3D11RenderTargetVie
 }
 
 // ----------------------------------------------------------------------------
+// Camera
+// ----------------------------------------------------------------------------
+
+struct Camera
+{
+    Vector3 eye;
+    float fov_deg;
+    float near_plane;
+    float far_plane;
+    Vector3 target;
+};
+
+// ----------------------------------------------------------------------------
 // Application's Entry Point (may throw an exception)
 // ----------------------------------------------------------------------------
 
@@ -644,6 +660,19 @@ static void Entry()
         CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_default.ReleaseAndGetAddressOf()));
     }
 
+    // scene constant buffer
+    wrl::ComPtr<ID3D11Buffer> cb_scene{};
+    {
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = sizeof(SceneConstants);
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        desc.MiscFlags = 0;
+        desc.StructureByteStride = 0;
+        CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_scene.ReleaseAndGetAddressOf()));
+    }
+
     // object constant buffer
     wrl::ComPtr<ID3D11Buffer> cb_object{};
     {
@@ -663,6 +692,14 @@ static void Entry()
 
     // ImGui handle
     ImGuiHandle imgui_handle{ window, d3d_dev.Get(), d3d_ctx.Get() };
+
+    // camera
+    Camera camera{};
+    camera.eye = { 0.0f, 2.0f, 10.0f };
+    camera.fov_deg = CAMERA_FOV_DEG;
+    camera.near_plane = CAMERA_NEAR_PLANE;
+    camera.far_plane = CAMERA_FAR_PLANE;
+    camera.target = {};
 
     // TODO: to be removed
     Vector3 quad_position{};
@@ -730,7 +767,7 @@ static void Entry()
 
                     // prepare pipeline for drawing
                     {
-                        ID3D11Buffer* cbufs[]{ cb_object.Get() };
+                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get() };
 
                         d3d_ctx->ClearState();
                         d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -744,6 +781,17 @@ static void Entry()
                         d3d_ctx->OMSetRenderTargets(1, &back_buffer_rtv, back_buffer_dsv);
                         d3d_ctx->IASetIndexBuffer(quad.Indices(), quad.IndexFormat(), 0);
                         d3d_ctx->IASetVertexBuffers(0, 1, quad.Vertices(), quad.Stride(), quad.Offset());
+                    }
+
+                    // upload scene constants
+                    {
+                        float aspect{ viewport.Width / viewport.Height };
+                        float fov_rad{ DirectX::XMConvertToRadians(camera.fov_deg) };
+
+                        SubresourceMap map{ d3d_ctx.Get(), cb_scene.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                        auto constants{ static_cast<SceneConstants*>(map.Data()) };
+                        constants->view = Matrix::CreateLookAt(camera.eye, camera.target, { 0.0f, 1.0f, 0.0f });
+                        constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, camera.near_plane, camera.far_plane);
                     }
 
                     // upload object constants

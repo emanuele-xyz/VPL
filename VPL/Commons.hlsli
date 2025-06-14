@@ -15,7 +15,12 @@ struct VSOutput
     float3 normal : NORMAL;
 };
 
-cbuffer CBObject : register(b0)
+cbuffer CBScene : register(b0)
+{
+    SceneConstants cb_scene;
+};
+
+cbuffer CBObject : register(b1)
 {
     ObjectConstants cb_object;
 };
