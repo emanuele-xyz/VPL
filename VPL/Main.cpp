@@ -968,31 +968,40 @@ static void Entry()
                 // render ui
                 StartNewImGuiFrame();
                 {
-                    ImGui::Begin("Quad");
+                    ImGui::Begin("VPL");
                     {
-                        // position editor
+                        if (ImGui::CollapsingHeader("Frame Data", ImGuiTreeNodeFlags_DefaultOpen))
                         {
-                            float position[3]{ quad_position.x, quad_position.y, quad_position.z };
-                            ImGui::DragFloat3("Position", position, 0.01f);
-                            quad_position = { position[0], position[1], position[2] };
+                            ImGui::Text("Time: %.1f sec", frame_t_sec);
+                            ImGui::Text("Delta Time: %.3f sec", frame_dt_sec);
+                            ImGui::Text("Delta Time: %.2f msec", frame_dt_sec * 1000.0f);
                         }
-                        // rotation editor
+                        if (ImGui::CollapsingHeader("Quad", ImGuiTreeNodeFlags_DefaultOpen))
                         {
-                            float rotation[3]{ quad_rotation.x, quad_rotation.y, quad_rotation.z };
-                            ImGui::DragFloat3("Rotation", rotation, 0.1f, 0.0f, 360.0f);
-                            quad_rotation = { rotation[0], rotation[1], rotation[2] };
-                        }
-                        // scaling editor
-                        {
-                            float scaling[3]{ quad_scaling.x, quad_scaling.y, quad_scaling.z };
-                            ImGui::DragFloat3("Scaling", scaling, 0.01f);
-                            quad_scaling = { scaling[0], scaling[1], scaling[2] };
-                        }
-                        // albedo
-                        {
-                            float color[3]{ quad_albedo.x, quad_albedo.y, quad_albedo.z };
-                            ImGui::ColorEdit3("Albedo", color);
-                            quad_albedo = { color[0], color[1], color[2] };
+                            // position editor
+                            {
+                                float position[3]{ quad_position.x, quad_position.y, quad_position.z };
+                                ImGui::DragFloat3("Position", position, 0.01f);
+                                quad_position = { position[0], position[1], position[2] };
+                            }
+                            // rotation editor
+                            {
+                                float rotation[3]{ quad_rotation.x, quad_rotation.y, quad_rotation.z };
+                                ImGui::DragFloat3("Rotation", rotation, 0.1f, 0.0f, 360.0f);
+                                quad_rotation = { rotation[0], rotation[1], rotation[2] };
+                            }
+                            // scaling editor
+                            {
+                                float scaling[3]{ quad_scaling.x, quad_scaling.y, quad_scaling.z };
+                                ImGui::DragFloat3("Scaling", scaling, 0.01f);
+                                quad_scaling = { scaling[0], scaling[1], scaling[2] };
+                            }
+                            // albedo
+                            {
+                                float color[3]{ quad_albedo.x, quad_albedo.y, quad_albedo.z };
+                                ImGui::ColorEdit3("Albedo", color);
+                                quad_albedo = { color[0], color[1], color[2] };
+                            }
                         }
                     }
                     ImGui::End();
