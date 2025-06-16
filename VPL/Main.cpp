@@ -34,10 +34,6 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 
-// Tiny Object Loader Library
-#define TINYOBJLOADER_IMPLEMENTATION
-#include "tiny_obj_loader.h"
-
 // Shaders bytecode
 #include "VS.h"
 #include "PSFlat.h"

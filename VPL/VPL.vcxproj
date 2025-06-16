@@ -155,7 +155,6 @@
     <ClInclude Include="imstb_truetype.h" />
     <ClInclude Include="PCH.h" />
     <ClInclude Include="SimpleMath.h" />
-    <ClInclude Include="tiny_obj_loader.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Commons.hlsli" />
