@@ -21,7 +21,7 @@ namespace wrl = Microsoft::WRL;
 #include <dxgidebug.h>
 #endif
 
-// Math library
+// Math Library
 #include "SimpleMath.h"
 using Matrix = DirectX::SimpleMath::Matrix;
 using Vector2 = DirectX::SimpleMath::Vector2;
@@ -29,10 +29,14 @@ using Vector3 = DirectX::SimpleMath::Vector3;
 using Vector4 = DirectX::SimpleMath::Vector4;
 using Quaternion = DirectX::SimpleMath::Quaternion;
 
-// ImGui
+// ImGui Library
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
+
+// Tiny Object Loader Library
+#define TINYOBJLOADER_IMPLEMENTATION
+#include "tiny_obj_loader.h"
 
 // Shaders bytecode
 #include "VS.h"
