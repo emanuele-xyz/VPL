@@ -82,6 +82,7 @@ constexpr float CAMERA_FAR_PLANE{ 100.0f };
 constexpr float CAMERA_MOVE_SPEED{ 10.0f };
 constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
 constexpr float MOUSE_SENSITIVITY{ 5.0f };
+constexpr float POINT_LIGHT_GIZMO_RADIUS{ 0.5f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -762,6 +763,12 @@ struct Object
     Vector3 albedo{ 1.0f, 1.0f, 1.0f };
 };
 
+struct PointLight
+{
+    Vector3 position;
+    Vector3 color;
+};
+
 // ----------------------------------------------------------------------------
 // Application's Entry Point (may throw an exception)
 // ----------------------------------------------------------------------------
@@ -868,6 +875,11 @@ static void Entry()
     camera.near_plane = CAMERA_NEAR_PLANE;
     camera.far_plane = CAMERA_FAR_PLANE;
     camera.target = {};
+
+    // scene point light
+    PointLight point_light{};
+    point_light.position = { 0.0f, 5.0f, 0.0f };
+    point_light.color = { 1.0f, 1.0f, 1.0f };
 
     // scene objects
     std::vector<Object> objects{};
@@ -1058,6 +1070,35 @@ static void Entry()
                         constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, camera.near_plane, camera.far_plane);
                     }
 
+                    // render point light
+                    {
+                        // upload object constants
+                        {
+                            Matrix translate{ Matrix::CreateTranslation(point_light.position) };
+                            Matrix scale{ Matrix::CreateScale({POINT_LIGHT_GIZMO_RADIUS, POINT_LIGHT_GIZMO_RADIUS, POINT_LIGHT_GIZMO_RADIUS}) };
+                            Matrix model{ scale * translate };
+                            Matrix normal{ scale };
+                            normal.Invert();
+                            normal.Transpose();
+
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = model;
+                            constants->normal = normal;
+                            constants->albedo = point_light.color;
+                        }
+
+                        // TODO: we are rendering a point light using a cube mesh, maybe use a sphere
+
+                        // set object related pipeline state
+                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0);
+                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset());
+
+                        // draw
+                        d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
+                    }
+
+                    // render objects
                     for (const Object& obj : objects)
                     {
                         // upload object constants
