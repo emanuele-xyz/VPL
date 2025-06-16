@@ -738,7 +738,7 @@ static void RenderImGuiFrame(ID3D11DeviceContext* d3d_ctx, ID3D11RenderTargetVie
 }
 
 // ----------------------------------------------------------------------------
-// Camera
+// Scene
 // ----------------------------------------------------------------------------
 
 struct Camera
@@ -750,6 +750,16 @@ struct Camera
     float near_plane;
     float far_plane;
     Vector3 target;
+};
+
+struct Object
+{
+    std::string name{ "unknown" };
+    Vector3 position{};
+    Vector3 rotation{};
+    Vector3 scaling{ 1.0f, 1.0f, 1.0f };
+    Mesh* mesh{};
+    Vector3 albedo{ 1.0f, 1.0f, 1.0f };
 };
 
 // ----------------------------------------------------------------------------
@@ -843,13 +853,13 @@ static void Entry()
     }
 
     // meshes
-    Mesh quad{ Mesh::Quad(d3d_dev.Get()) };
-    Mesh cube{ Mesh::Cube(d3d_dev.Get()) };
+    Mesh quad_mesh{ Mesh::Quad(d3d_dev.Get()) };
+    Mesh cube_mesh{ Mesh::Cube(d3d_dev.Get()) };
 
     // ImGui handle
     ImGuiHandle imgui_handle{ window, d3d_dev.Get(), d3d_ctx.Get() };
 
-    // camera
+    // scene camera
     Camera camera{};
     camera.eye = { 0.0f, 2.0f, 10.0f };
     camera.yaw_deg = CAMERA_START_YAW_DEG;
@@ -859,11 +869,43 @@ static void Entry()
     camera.far_plane = CAMERA_FAR_PLANE;
     camera.target = {};
 
-    // TODO: to be removed
-    Vector3 quad_position{};
-    Vector3 quad_rotation{ 0.0f, 0.0f, 0.0f };
-    Vector3 quad_scaling{ 1.0f, 1.0f, 1.0f };
-    Vector3 quad_albedo{ 1.0f, 0.0f, 0.0f };
+    // scene objects
+    std::vector<Object> objects{};
+    {
+        // floor
+        {
+            Object& floor{ objects.emplace_back() };
+            floor.name = "floor";
+            floor.rotation = { 270.0f, 0.0f, 0.0f };
+            floor.scaling = { 10.0f, 10.0f, 1.0f };
+            floor.mesh = &quad_mesh;
+            floor.albedo = { 0.0f, 0.0f, 1.0f };
+        }
+        // cube
+        {
+            Object& cube{ objects.emplace_back() };
+            cube.name = "cube";
+            cube.position = { 0.0f, 0.5f, 0.0f };
+            cube.mesh = &cube_mesh;
+            cube.albedo = { 1.0f, 0.0f, 0.0f };
+        }
+    }
+
+    // validate scene objects: no two objects can have the same name
+    {
+        std::unordered_set<std::string> object_names{};
+        for (const Object& obj : objects)
+        {
+            if (object_names.contains(obj.name))
+            {
+                Crash(std::format("two or more scene objects have the same name '{}'", obj.name));
+            }
+            else
+            {
+                object_names.emplace(obj.name);
+            }
+        }
+    }
 
     // time data
     const LARGE_INTEGER performance_counter_frequency{ GetWin32PerformanceFrequency() };
@@ -1003,10 +1045,6 @@ static void Entry()
                         d3d_ctx->RSSetState(rs_default.Get());
                         d3d_ctx->RSSetViewports(1, &viewport);
                         d3d_ctx->OMSetRenderTargets(1, &back_buffer_rtv, back_buffer_dsv);
-                        //d3d_ctx->IASetIndexBuffer(quad.Indices(), quad.IndexFormat(), 0);
-                        //d3d_ctx->IASetVertexBuffers(0, 1, quad.Vertices(), quad.Stride(), quad.Offset());
-                        d3d_ctx->IASetIndexBuffer(cube.Indices(), cube.IndexFormat(), 0);
-                        d3d_ctx->IASetVertexBuffers(0, 1, cube.Vertices(), cube.Stride(), cube.Offset());
                     }
 
                     // upload scene constants
@@ -1020,31 +1058,37 @@ static void Entry()
                         constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, camera.near_plane, camera.far_plane);
                     }
 
-                    // upload object constants
+                    for (const Object& obj : objects)
                     {
-                        Vector3 rotation_rad{};
-                        rotation_rad.x = DirectX::XMConvertToRadians(quad_rotation.x);
-                        rotation_rad.y = DirectX::XMConvertToRadians(quad_rotation.y);
-                        rotation_rad.z = DirectX::XMConvertToRadians(quad_rotation.z);
+                        // upload object constants
+                        {
+                            Vector3 rotation_rad{};
+                            rotation_rad.x = DirectX::XMConvertToRadians(obj.rotation.x);
+                            rotation_rad.y = DirectX::XMConvertToRadians(obj.rotation.y);
+                            rotation_rad.z = DirectX::XMConvertToRadians(obj.rotation.z);
 
-                        Matrix translate{ Matrix::CreateTranslation(quad_position) };
-                        Matrix rotate{ Matrix::CreateFromYawPitchRoll(rotation_rad) };
-                        Matrix scale{ Matrix::CreateScale(quad_scaling) };
-                        Matrix model{ scale * rotate * translate };
-                        Matrix normal{ scale * rotate };
-                        normal.Invert();
-                        normal.Transpose();
+                            Matrix translate{ Matrix::CreateTranslation(obj.position) };
+                            Matrix rotate{ Matrix::CreateFromYawPitchRoll(rotation_rad) };
+                            Matrix scale{ Matrix::CreateScale(obj.scaling) };
+                            Matrix model{ scale * rotate * translate };
+                            Matrix normal{ scale * rotate };
+                            normal.Invert();
+                            normal.Transpose();
 
-                        SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                        auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                        constants->model = model;
-                        constants->normal = normal;
-                        constants->albedo = quad_albedo;
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = model;
+                            constants->normal = normal;
+                            constants->albedo = obj.albedo;
+                        }
+
+                        // set object related pipeline state
+                        d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
+                        d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
+
+                        // draw
+                        d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
                     }
-
-                    // draw
-                    //d3d_ctx->DrawIndexed(quad.IndexCount(), 0, 0);
-                    d3d_ctx->DrawIndexed(cube.IndexCount(), 0, 0);
                 }
 
                 // render ui
@@ -1058,31 +1102,39 @@ static void Entry()
                             ImGui::Text("Delta Time: %.3f sec", frame_dt_sec);
                             ImGui::Text("Delta Time: %.2f msec", frame_dt_sec * 1000.0f);
                         }
-                        if (ImGui::CollapsingHeader("Quad", ImGuiTreeNodeFlags_DefaultOpen))
+                        if (ImGui::CollapsingHeader("Objects", ImGuiTreeNodeFlags_DefaultOpen))
                         {
-                            // position editor
+                            for (std::size_t i{}; i < objects.size(); i++)
                             {
-                                float position[3]{ quad_position.x, quad_position.y, quad_position.z };
-                                ImGui::DragFloat3("Position", position, 0.01f);
-                                quad_position = { position[0], position[1], position[2] };
-                            }
-                            // rotation editor
-                            {
-                                float rotation[3]{ quad_rotation.x, quad_rotation.y, quad_rotation.z };
-                                ImGui::DragFloat3("Rotation", rotation, 0.1f, 0.0f, 360.0f);
-                                quad_rotation = { rotation[0], rotation[1], rotation[2] };
-                            }
-                            // scaling editor
-                            {
-                                float scaling[3]{ quad_scaling.x, quad_scaling.y, quad_scaling.z };
-                                ImGui::DragFloat3("Scaling", scaling, 0.01f);
-                                quad_scaling = { scaling[0], scaling[1], scaling[2] };
-                            }
-                            // albedo
-                            {
-                                float color[3]{ quad_albedo.x, quad_albedo.y, quad_albedo.z };
-                                ImGui::ColorEdit3("Albedo", color);
-                                quad_albedo = { color[0], color[1], color[2] };
+                                if (ImGui::TreeNode(objects[i].name.c_str()))
+                                {
+                                    // position editor
+                                    {
+                                        float position[3]{ objects[i].position.x, objects[i].position.y, objects[i].position.z };
+                                        ImGui::DragFloat3("Position", position, 0.01f);
+                                        objects[i].position = { position[0], position[1], position[2] };
+                                    }
+                                    // rotation editor
+                                    {
+                                        float rotation[3]{ objects[i].rotation.x, objects[i].rotation.y, objects[i].rotation.z };
+                                        ImGui::DragFloat3("Rotation", rotation, 0.1f, 0.0f, 360.0f);
+                                        objects[i].rotation = { rotation[0], rotation[1], rotation[2] };
+                                    }
+                                    // scaling editor
+                                    {
+                                        float scaling[3]{ objects[i].scaling.x, objects[i].scaling.y, objects[i].scaling.z };
+                                        ImGui::DragFloat3("Scaling", scaling, 0.01f);
+                                        objects[i].scaling = { scaling[0], scaling[1], scaling[2] };
+                                    }
+                                    // albedo
+                                    {
+                                        float color[3]{ objects[i].albedo.x, objects[i].albedo.y, objects[i].albedo.z };
+                                        ImGui::ColorEdit3("Albedo", color);
+                                        objects[i].albedo = { color[0], color[1], color[2] };
+                                    }
+
+                                    ImGui::TreePop();
+                                }
                             }
                         }
                     }
