@@ -31,9 +31,9 @@ PSOut main(VSOutput input)
         {
             float3 world_sphere_point = ro + t * rd;
             float4 clip_sphere_point = mul(cb_scene.projection, mul(cb_scene.view, float4(world_sphere_point, 1)));
-            clip_sphere_point.xyzw /= clip_sphere_point.w; // perspective divide
+            float4 ndc_sphere_point = clip_sphere_point.xyzw / clip_sphere_point.w; // perspective divide
          
-            output.depth = clip_sphere_point.z / 2 + 0.5; // map NDC [-1;+1] z to [0;1] depth
+            output.depth = ndc_sphere_point.z;
         }
     }
     

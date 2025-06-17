@@ -37,6 +37,7 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 // Shaders bytecode
 #include "VS.h"
 #include "PSFlat.h"
+#include "PSPLLit.h"
 #include "PSPointLight.h"
 
 // Constant buffers
@@ -804,6 +805,8 @@ static void Entry()
     CheckHR(d3d_dev->CreateVertexShader(VS_bytes, sizeof(VS_bytes), nullptr, vs.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_flat{};
     CheckHR(d3d_dev->CreatePixelShader(PSFlat_bytes, sizeof(PSFlat_bytes), nullptr, ps_flat.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_pl_lit{};
+    CheckHR(d3d_dev->CreatePixelShader(PSPLLit_bytes, sizeof(PSPLLit_bytes), nullptr, ps_pl_lit.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_point_light{};
     CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
 
@@ -893,7 +896,7 @@ static void Entry()
 
     // scene point light
     PointLight point_light{};
-    point_light.position = { 0.0f, 5.0f, 0.0f };
+    point_light.position = { 0.0f, 2.0f, 0.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
 
     // scene objects
@@ -1086,37 +1089,48 @@ static void Entry()
                     }
 
                     // render objects
-                    for (const Object& obj : objects)
                     {
-                        // upload object constants
+                        d3d_ctx->PSSetShader(ps_pl_lit.Get(), nullptr, 0);
+
+                        // upload light constants
                         {
-                            Vector3 rotation_rad{};
-                            rotation_rad.x = DirectX::XMConvertToRadians(obj.rotation.x);
-                            rotation_rad.y = DirectX::XMConvertToRadians(obj.rotation.y);
-                            rotation_rad.z = DirectX::XMConvertToRadians(obj.rotation.z);
-
-                            Matrix translate{ Matrix::CreateTranslation(obj.position) };
-                            Matrix rotate{ Matrix::CreateFromYawPitchRoll(rotation_rad) };
-                            Matrix scale{ Matrix::CreateScale(obj.scaling) };
-                            Matrix model{ scale * rotate * translate };
-                            Matrix normal{ scale * rotate };
-                            normal.Invert();
-                            normal.Transpose();
-
-                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = model;
-                            constants->normal = normal;
-                            constants->albedo = obj.albedo;
+                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<LightConstants*>(map.Data()) };
+                            constants->world_position = point_light.position;
+                            constants->color = point_light.color;
                         }
 
-                        // set object related pipeline state
-                        d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
-                        d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
-                        d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
+                        for (const Object& obj : objects)
+                        {
+                            // upload object constants
+                            {
+                                Vector3 rotation_rad{};
+                                rotation_rad.x = DirectX::XMConvertToRadians(obj.rotation.x);
+                                rotation_rad.y = DirectX::XMConvertToRadians(obj.rotation.y);
+                                rotation_rad.z = DirectX::XMConvertToRadians(obj.rotation.z);
 
-                        // draw
-                        d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
+                                Matrix translate{ Matrix::CreateTranslation(obj.position) };
+                                Matrix rotate{ Matrix::CreateFromYawPitchRoll(rotation_rad) };
+                                Matrix scale{ Matrix::CreateScale(obj.scaling) };
+                                Matrix model{ scale * rotate * translate };
+                                Matrix normal{ scale * rotate };
+                                normal.Invert();
+                                normal.Transpose();
+
+                                SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                constants->model = model;
+                                constants->normal = normal;
+                                constants->albedo = obj.albedo;
+                            }
+
+                            // set related pipeline state
+                            d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
+                            d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
+
+                            // draw
+                            d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
+                        }
                     }
 
                     // render point light gizmo
@@ -1143,7 +1157,7 @@ static void Entry()
                             constants->color = point_light.color;
                         }
 
-                        // set object related pipeline state
+                        // set related pipeline state
                         d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
                         d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
                         d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor

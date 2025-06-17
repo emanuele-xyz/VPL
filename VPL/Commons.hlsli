@@ -3,6 +3,8 @@
 
 #include "ConstantBuffers.hlsli"
 
+static const float PI = 3.14159265;
+
 struct VSInput
 {
     float3 local_position : POSITION;
