@@ -88,5 +88,6 @@
   <ItemGroup>
     <FxCompile Include="PSFlat.hlsl" />
     <FxCompile Include="VS.hlsl" />
+    <FxCompile Include="PSPointLight.hlsl" />
   </ItemGroup>
 </Project>

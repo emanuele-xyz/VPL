@@ -37,6 +37,7 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 // Shaders bytecode
 #include "VS.h"
 #include "PSFlat.h"
+#include "PSPointLight.h"
 
 // Constant buffers
 #define float2 Vector2
@@ -82,7 +83,7 @@ constexpr float CAMERA_FAR_PLANE{ 100.0f };
 constexpr float CAMERA_MOVE_SPEED{ 10.0f };
 constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
 constexpr float MOUSE_SENSITIVITY{ 5.0f };
-constexpr float POINT_LIGHT_GIZMO_RADIUS{ 0.5f };
+constexpr float POINT_LIGHT_GIZMO_RADIUS{ 0.25f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -803,6 +804,8 @@ static void Entry()
     CheckHR(d3d_dev->CreateVertexShader(VS_bytes, sizeof(VS_bytes), nullptr, vs.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_flat{};
     CheckHR(d3d_dev->CreatePixelShader(PSFlat_bytes, sizeof(PSFlat_bytes), nullptr, ps_flat.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_point_light{};
+    CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
 
     // input layout
     wrl::ComPtr<ID3D11InputLayout> input_layout{};
@@ -855,8 +858,20 @@ static void Entry()
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
         desc.MiscFlags = 0;
         desc.StructureByteStride = 0;
-
         CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_object.ReleaseAndGetAddressOf()));
+    }
+
+    // light constant buffer
+    wrl::ComPtr<ID3D11Buffer> cb_light{};
+    {
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = sizeof(LightConstants);
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        desc.MiscFlags = 0;
+        desc.StructureByteStride = 0;
+        CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_light.ReleaseAndGetAddressOf()));
     }
 
     // meshes
@@ -1045,14 +1060,13 @@ static void Entry()
 
                     // prepare pipeline for drawing
                     {
-                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get() };
+                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get() };
 
                         d3d_ctx->ClearState();
                         d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         d3d_ctx->IASetInputLayout(input_layout.Get());
                         d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
-                        d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->RSSetState(rs_default.Get());
                         d3d_ctx->RSSetViewports(1, &viewport);
@@ -1068,34 +1082,7 @@ static void Entry()
                         auto constants{ static_cast<SceneConstants*>(map.Data()) };
                         constants->view = Matrix::CreateLookAt(camera.eye, camera.target, { 0.0f, 1.0f, 0.0f });
                         constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, camera.near_plane, camera.far_plane);
-                    }
-
-                    // render point light
-                    {
-                        // upload object constants
-                        {
-                            Matrix translate{ Matrix::CreateTranslation(point_light.position) };
-                            Matrix scale{ Matrix::CreateScale({POINT_LIGHT_GIZMO_RADIUS, POINT_LIGHT_GIZMO_RADIUS, POINT_LIGHT_GIZMO_RADIUS}) };
-                            Matrix model{ scale * translate };
-                            Matrix normal{ scale };
-                            normal.Invert();
-                            normal.Transpose();
-
-                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = model;
-                            constants->normal = normal;
-                            constants->albedo = point_light.color;
-                        }
-
-                        // TODO: we are rendering a point light using a cube mesh, maybe use a sphere
-
-                        // set object related pipeline state
-                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0);
-                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset());
-
-                        // draw
-                        d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
+                        constants->world_eye = camera.eye;
                     }
 
                     // render objects
@@ -1124,11 +1111,45 @@ static void Entry()
                         }
 
                         // set object related pipeline state
+                        d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
                         d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
                         d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
 
                         // draw
                         d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
+                    }
+
+                    // render point light gizmo
+                    {
+                        // upload light impostor object constants
+                        {
+                            float point_ligt_gizmo_diameter{ POINT_LIGHT_GIZMO_RADIUS * 2.0f };
+
+                            Matrix translate{ Matrix::CreateTranslation(point_light.position) };
+                            Matrix scale{ Matrix::CreateScale({point_ligt_gizmo_diameter, point_ligt_gizmo_diameter, point_ligt_gizmo_diameter}) };
+                            Matrix model{ scale * translate };
+
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = model;
+                        }
+
+                        // upload light constants
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<LightConstants*>(map.Data()) };
+                            constants->world_position = point_light.position;
+                            constants->gizmo_radius = POINT_LIGHT_GIZMO_RADIUS;
+                            constants->color = point_light.color;
+                        }
+
+                        // set object related pipeline state
+                        d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
+                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
+                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
+
+                        // draw
+                        d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
                 }
 

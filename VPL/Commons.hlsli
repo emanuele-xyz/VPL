@@ -5,14 +5,15 @@
 
 struct VSInput
 {
-    float3 position : POSITION;
-    float3 normal : NORMAL;
+    float3 local_position : POSITION;
+    float3 local_normal : NORMAL;
 };
 
 struct VSOutput
 {
-    float4 position : SV_Position;
-    float3 normal : NORMAL;
+    float4 clip_position : SV_Position;
+    float3 world_normal : NORMAL;
+    float3 world_position : POSITION;
 };
 
 cbuffer CBScene : register(b0)
@@ -23,6 +24,11 @@ cbuffer CBScene : register(b0)
 cbuffer CBObject : register(b1)
 {
     ObjectConstants cb_object;
+};
+
+cbuffer CBLight : register(b2)
+{
+    LightConstants cb_light;
 };
 
 #endif
