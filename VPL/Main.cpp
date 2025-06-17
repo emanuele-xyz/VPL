@@ -1143,6 +1143,21 @@ static void Entry()
                             ImGui::Text("Delta Time: %.3f sec", frame_dt_sec);
                             ImGui::Text("Delta Time: %.2f msec", frame_dt_sec * 1000.0f);
                         }
+                        if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
+                            // position editor
+                            {
+                                float position[3]{ point_light.position.x, point_light.position.y, point_light.position.z };
+                                ImGui::DragFloat3("Position", position, 0.01f);
+                                point_light.position = { position[0], position[1], position[2] };
+                            }
+                            // color editor
+                            {
+                                float color[3]{ point_light.color.x, point_light.color.y, point_light.color.z };
+                                ImGui::ColorEdit3("Color", color);
+                                point_light.color = { color[0], color[1], color[2] };
+                            }
+                        }
                         if (ImGui::CollapsingHeader("Objects", ImGuiTreeNodeFlags_DefaultOpen))
                         {
                             for (std::size_t i{}; i < objects.size(); i++)
@@ -1167,7 +1182,7 @@ static void Entry()
                                         ImGui::DragFloat3("Scaling", scaling, 0.01f);
                                         objects[i].scaling = { scaling[0], scaling[1], scaling[2] };
                                     }
-                                    // albedo
+                                    // albedo editor
                                     {
                                         float color[3]{ objects[i].albedo.x, objects[i].albedo.y, objects[i].albedo.z };
                                         ImGui::ColorEdit3("Albedo", color);
