@@ -9,10 +9,7 @@ float4 main(VSOutput input) : SV_TARGET
     float3 L = normalize(cb_light.world_position - input.world_position);
     float NdotL = max(dot(N, L), 0);
     
-    float3 l = cb_light.world_position - input.world_position;
-    float attenuation = 1 / dot(l, l);
-    
-    float3 color = diffuse * cb_light.color * attenuation * NdotL; // rendering equation
+    float3 color = diffuse * cb_light.color * NdotL; // rendering equation
     
     return float4(color, 1.0);
 }

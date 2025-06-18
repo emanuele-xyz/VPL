@@ -896,7 +896,7 @@ static void Entry()
 
     // scene point light
     PointLight point_light{};
-    point_light.position = { 0.0f, 2.0f, 0.0f };
+    point_light.position = { 1.0f, 2.0f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
 
     // scene objects
