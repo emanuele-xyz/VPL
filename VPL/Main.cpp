@@ -84,7 +84,7 @@ constexpr float CAMERA_FAR_PLANE{ 100.0f };
 constexpr float CAMERA_MOVE_SPEED{ 10.0f };
 constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
 constexpr float MOUSE_SENSITIVITY{ 5.0f };
-constexpr float POINT_LIGHT_GIZMO_RADIUS{ 0.25f };
+constexpr float POINT_LIGHT_RADIUS{ 0.25f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1133,14 +1133,14 @@ static void Entry()
                         }
                     }
 
-                    // render point light gizmo
+                    // render point light
                     {
                         // upload light impostor object constants
                         {
-                            float point_ligt_gizmo_diameter{ POINT_LIGHT_GIZMO_RADIUS * 2.0f };
+                            float point_ligt_diameter{ POINT_LIGHT_RADIUS * 2.0f };
 
                             Matrix translate{ Matrix::CreateTranslation(point_light.position) };
-                            Matrix scale{ Matrix::CreateScale({point_ligt_gizmo_diameter, point_ligt_gizmo_diameter, point_ligt_gizmo_diameter}) };
+                            Matrix scale{ Matrix::CreateScale({point_ligt_diameter, point_ligt_diameter, point_ligt_diameter}) };
                             Matrix model{ scale * translate };
 
                             SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
@@ -1153,7 +1153,7 @@ static void Entry()
                             SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                             auto constants{ static_cast<LightConstants*>(map.Data()) };
                             constants->world_position = point_light.position;
-                            constants->gizmo_radius = POINT_LIGHT_GIZMO_RADIUS;
+                            constants->radius = POINT_LIGHT_RADIUS;
                             constants->color = point_light.color;
                         }
 

@@ -20,7 +20,7 @@ struct ObjectConstants
 struct LightConstants
 {
     float3 world_position;
-    float gizmo_radius;
+    float radius;
     float3 color;
     float _pad;
 };

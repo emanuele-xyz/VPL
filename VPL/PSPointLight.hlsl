@@ -15,7 +15,7 @@ PSOut main(VSOutput input)
     float3 ro = cb_scene.world_eye; // ray origin
     float3 rd = normalize(input.world_position - cb_scene.world_eye); // ray direction
     float3 sc = cb_light.world_position; // sphere center
-    float sr = cb_light.gizmo_radius; // sphere radius
+    float sr = cb_light.radius; // sphere radius
     
     float a = dot(rd, rd);
     float b = 2 * dot(ro, rd) - 2 * dot(rd, sc);
