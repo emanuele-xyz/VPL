@@ -85,6 +85,9 @@ constexpr float CAMERA_MOVE_SPEED{ 10.0f };
 constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
 constexpr float MOUSE_SENSITIVITY{ 5.0f };
 constexpr float POINT_LIGHT_RADIUS{ 0.25f };
+constexpr UINT RAY_VERTEX_COUNT{ 2 };
+constexpr Vector3 RAY_COLOR{ 0.0f, 1.0f, 0.0f };
+constexpr float RAY_T{ 10.0f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -315,6 +318,16 @@ float GetElapsedSec(LARGE_INTEGER t0, LARGE_INTEGER t1, LARGE_INTEGER frequency)
 }
 
 // ----------------------------------------------------------------------------
+// Vertex Definition
+// ----------------------------------------------------------------------------
+
+struct Vertex
+{
+    Vector3 position;
+    Vector3 normal;
+};
+
+// ----------------------------------------------------------------------------
 // D3D11 (and DXGI) API Helpers
 // ----------------------------------------------------------------------------
 
@@ -401,12 +414,6 @@ private:
 
 Mesh Mesh::Quad(ID3D11Device* d3d_dev)
 {
-    struct Vertex
-    {
-        Vector3 position;
-        Vector3 normal;
-    };
-
     /*
         Local space quad vertex positions (we are on z = 0)
         We suppose the quad's normal is (0, 0, 1)
@@ -441,12 +448,6 @@ Mesh Mesh::Quad(ID3D11Device* d3d_dev)
 
 Mesh Mesh::Cube(ID3D11Device* d3d_dev)
 {
-    struct Vertex
-    {
-        Vector3 position;
-        Vector3 normal;
-    };
-
     Vertex vertices[]
     {
         // front face (Z+)
@@ -741,6 +742,16 @@ static void RenderImGuiFrame(ID3D11DeviceContext* d3d_ctx, ID3D11RenderTargetVie
 }
 
 // ----------------------------------------------------------------------------
+// Geometry
+// ----------------------------------------------------------------------------
+
+struct Ray
+{
+    Vector3 origin;
+    Vector3 direction;
+};
+
+// ----------------------------------------------------------------------------
 // Scene
 // ----------------------------------------------------------------------------
 
@@ -821,7 +832,7 @@ static void Entry()
         CheckHR(d3d_dev->CreateInputLayout(desc, std::size(desc), VS_bytes, sizeof(VS_bytes), input_layout.ReleaseAndGetAddressOf()));
     }
 
-    // rasterizer states
+    // default rasterizer state
     wrl::ComPtr<ID3D11RasterizerState> rs_default{};
     {
         D3D11_RASTERIZER_DESC desc{};
@@ -875,6 +886,19 @@ static void Entry()
         desc.MiscFlags = 0;
         desc.StructureByteStride = 0;
         CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_light.ReleaseAndGetAddressOf()));
+    }
+
+    // ray vertex buffer
+    wrl::ComPtr<ID3D11Buffer> vb_ray{};
+    {
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = sizeof(Vertex) * RAY_VERTEX_COUNT;
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        desc.MiscFlags = 0;
+        desc.StructureByteStride = 0;
+        CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, vb_ray.ReleaseAndGetAddressOf()));
     }
 
     // meshes
@@ -936,6 +960,11 @@ static void Entry()
             }
         }
     }
+
+    // TODO: temporary
+    Ray ray{};
+    ray.origin = {};
+    ray.direction = { 1.0f, 1.0f, 1.0f };
 
     // time data
     const LARGE_INTEGER performance_counter_frequency{ GetWin32PerformanceFrequency() };
@@ -1164,6 +1193,39 @@ static void Entry()
 
                         // draw
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
+                    }
+
+                    // render ray
+                    {
+                        // upload ray constants
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = Matrix::Identity;
+                            constants->albedo = RAY_COLOR;
+                        }
+
+                        // upload ray vertices
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), vb_ray.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto vertices{ static_cast<Vertex*>(map.Data()) };
+                            vertices[0] = { .position = { ray.origin } };
+                            vertices[1] = { .position = { ray.origin + RAY_T * ray.direction } };
+                        }
+
+                        // set related pipeline state
+                        {
+                            ID3D11Buffer* vbufs[]{ vb_ray.Get() };
+                            UINT strides[]{ sizeof(Vertex) };
+                            UINT offsets[]{ 0 };
+
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                            d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
+                            d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                        }
+
+                        // draw
+                        d3d_ctx->Draw(RAY_VERTEX_COUNT, 0);
                     }
                 }
 
