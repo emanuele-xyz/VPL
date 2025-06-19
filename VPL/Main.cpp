@@ -1,4 +1,4 @@
-// ----------------------------------------------------------------------------
+﻿// ----------------------------------------------------------------------------
 // Includes
 // ----------------------------------------------------------------------------
 
@@ -85,9 +85,11 @@ constexpr float CAMERA_MOVE_SPEED{ 10.0f };
 constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
 constexpr float MOUSE_SENSITIVITY{ 5.0f };
 constexpr float POINT_LIGHT_RADIUS{ 0.25f };
-constexpr UINT RAY_VERTEX_COUNT{ 2 };
-constexpr Vector3 RAY_COLOR{ 0.0f, 1.0f, 0.0f };
-constexpr float RAY_T{ 10.0f };
+constexpr UINT LINE_VERTEX_COUNT{ 2 };
+constexpr Vector3 LINE_COLOR{ 0.0f, 1.0f, 0.0f };
+constexpr int PARTICLES_COUNT_START{ 10 };
+constexpr int PARTICLES_COUNT_MIN{ 1 };
+constexpr int PARTICLES_COUNT_MAX{ 1000 };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -888,17 +890,17 @@ static void Entry()
         CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_light.ReleaseAndGetAddressOf()));
     }
 
-    // ray vertex buffer
-    wrl::ComPtr<ID3D11Buffer> vb_ray{};
+    // line vertex buffer
+    wrl::ComPtr<ID3D11Buffer> vb_line{};
     {
         D3D11_BUFFER_DESC desc{};
-        desc.ByteWidth = sizeof(Vertex) * RAY_VERTEX_COUNT;
+        desc.ByteWidth = sizeof(Vertex) * LINE_VERTEX_COUNT;
         desc.Usage = D3D11_USAGE_DYNAMIC;
         desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
         desc.MiscFlags = 0;
         desc.StructureByteStride = 0;
-        CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, vb_ray.ReleaseAndGetAddressOf()));
+        CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, vb_line.ReleaseAndGetAddressOf()));
     }
 
     // meshes
@@ -907,6 +909,13 @@ static void Entry()
 
     // ImGui handle
     ImGuiHandle imgui_handle{ window, d3d_dev.Get(), d3d_ctx.Get() };
+
+    // configuration variables
+    int seed{};
+    int particles_count{ PARTICLES_COUNT_START };
+
+    // uniform distribution between [0, 1)
+    std::uniform_real_distribution<float> dis{ 0.0f, 1.0f };
 
     // scene camera
     Camera camera{};
@@ -945,6 +954,9 @@ static void Entry()
         }
     }
 
+    // rays
+    std::vector<Ray> rays{};
+
     // validate scene objects: no two objects can have the same name
     {
         std::unordered_set<std::string> object_names{};
@@ -960,11 +972,6 @@ static void Entry()
             }
         }
     }
-
-    // TODO: temporary
-    Ray ray{};
-    ray.origin = {};
-    ray.direction = { 1.0f, 1.0f, 1.0f };
 
     // time data
     const LARGE_INTEGER performance_counter_frequency{ GetWin32PerformanceFrequency() };
@@ -1075,6 +1082,31 @@ static void Entry()
                             camera.target = camera.eye + camera_forward;
                         }
                     }
+
+                    // shoot rays from the point light
+                    {
+                        rays.clear(); // forget the previous frame's rays
+
+                        // generate random ray direction from random positions on a unit sphere
+                        {
+                            std::mt19937 generator{ static_cast<unsigned>(seed) };
+
+                            for (int i{}; i < particles_count; i++)
+                            {
+                                float theta{ 2.0f * static_cast<float>(std::numbers::pi) * dis(generator) }; // azimuthal angle (0 to 2π)
+                                float z{ 2.0f * dis(generator) - 1.0f }; // z-coordinate (-1 to 1)
+                                float r{ sqrt(1.0f - z * z) }; // radius at that z
+
+                                float x{ r * cos(theta) };
+                                float y{ r * sin(theta) };
+
+                                Ray ray{};
+                                ray.origin = point_light.position;
+                                ray.direction = { x, y, z };
+                                rays.emplace_back(ray);
+                            }
+                        }
+                    }
                 }
 
                 // render scene
@@ -1153,7 +1185,7 @@ static void Entry()
                                 constants->albedo = obj.albedo;
                             }
 
-                            // set related pipeline state
+                            // set pipeline state
                             d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
                             d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
 
@@ -1186,7 +1218,7 @@ static void Entry()
                             constants->color = point_light.color;
                         }
 
-                        // set related pipeline state
+                        // set pipeline state
                         d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
                         d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
                         d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
@@ -1195,27 +1227,28 @@ static void Entry()
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
 
-                    // render ray
+                    // render rays (using lines)
+                    for (const Ray& ray : rays)
                     {
-                        // upload ray constants
+                        // upload object constants
                         {
                             SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                             auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = Matrix::Identity;
-                            constants->albedo = RAY_COLOR;
+                            constants->model = Matrix::Identity; // we pass line vertices in world space
+                            constants->albedo = LINE_COLOR;
                         }
 
-                        // upload ray vertices
+                        // upload line vertices
                         {
-                            SubresourceMap map{ d3d_ctx.Get(), vb_ray.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                             auto vertices{ static_cast<Vertex*>(map.Data()) };
                             vertices[0] = { .position = { ray.origin } };
-                            vertices[1] = { .position = { ray.origin + RAY_T * ray.direction } };
+                            vertices[1] = { .position = { ray.origin + 10.0f * ray.direction } }; // TODO: hardcoded for now
                         }
 
-                        // set related pipeline state
+                        // set pipeline state
                         {
-                            ID3D11Buffer* vbufs[]{ vb_ray.Get() };
+                            ID3D11Buffer* vbufs[]{ vb_line.Get() };
                             UINT strides[]{ sizeof(Vertex) };
                             UINT offsets[]{ 0 };
 
@@ -1225,7 +1258,7 @@ static void Entry()
                         }
 
                         // draw
-                        d3d_ctx->Draw(RAY_VERTEX_COUNT, 0);
+                        d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                     }
                 }
 
@@ -1239,6 +1272,11 @@ static void Entry()
                             ImGui::Text("Time: %.1f sec", frame_t_sec);
                             ImGui::Text("Delta Time: %.3f sec", frame_dt_sec);
                             ImGui::Text("Delta Time: %.2f msec", frame_dt_sec * 1000.0f);
+                        }
+                        if (ImGui::CollapsingHeader("Configuration", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
+                            ImGui::DragInt("Seed", &seed, 1.0f);
+                            ImGui::DragInt("Particles", &particles_count, 1.0f, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                         }
                         if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
                         {

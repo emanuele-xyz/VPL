@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
 #include <exception>
@@ -9,7 +10,9 @@
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <numbers>
 #include <print>
+#include <random>
 #include <sstream>
 #include <stacktrace>
 #include <stdexcept>
