@@ -660,10 +660,10 @@ static wrl::ComPtr<IDXGISwapChain1> CreateDXGISwapChain(HWND window, ID3D11Devic
     DXGI_ADAPTER_DESC adapter_desc{};
     CheckHR(dxgi_adapter->GetDesc(&adapter_desc));
 
-    std::cout << "adapter: " << StrFromWStr(adapter_desc.Description) << std::endl;
-    std::cout << "VRAM: " << GetBytesStr(adapter_desc.DedicatedVideoMemory) << std::endl;
-    std::cout << "dedicated RAM: " << GetBytesStr(adapter_desc.DedicatedSystemMemory) << std::endl;
-    std::cout << "shared RAM: " << GetBytesStr(adapter_desc.SharedSystemMemory) << std::endl;
+    std::println("adapter: {}", StrFromWStr(adapter_desc.Description));
+    std::println("VRAM: {}", GetBytesStr(adapter_desc.DedicatedVideoMemory));
+    std::println("dedicated RAM: {}", GetBytesStr(adapter_desc.DedicatedSystemMemory));
+    std::println("shared RAM: {}", GetBytesStr(adapter_desc.SharedSystemMemory));
 
     wrl::ComPtr<IDXGIFactory2> dxgi_factory{};
     CheckHR(dxgi_adapter->GetParent(IID_PPV_ARGS(dxgi_factory.ReleaseAndGetAddressOf())));
@@ -1256,13 +1256,47 @@ static void Entry()
 
 int main()
 {
+    int renders{};
+
+    constexpr int N{ 10 };
+    constexpr float rho{ 0.25 }; // mean reflectivity
+    constexpr int M{ static_cast<int>((1.0 / (1 - rho)) * N) };
+
+    double w{}, start{};
+    int end{}, reflections{};
+
+    start = end = N;
+
+    while (end > 0)
+    {
+        start *= rho;
+
+        std::println("start: {} - end: {}", static_cast<int>(start), end);
+        for (int i{ static_cast<int>(start) }; i < end; i++)
+        {
+            w = N;
+
+            for (int j{}; j <= reflections; j++)
+            {
+                std::println("render scene - particle={}, j={}, L={}/{}", i, j, N, std::floor(w));
+                w *= rho;
+
+                renders++;
+            }
+        }
+
+        reflections++;
+        end = static_cast<int>(start);
+    }
+    std::println("total renders: {} - M: {}", renders, M);
+
     try
     {
         Entry();
     }
     catch (const Error& e)
     {
-        std::cerr << e.what() << std::endl;
+        std::println("{}", e.what());
     }
 
     return 0;
