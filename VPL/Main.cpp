@@ -913,6 +913,7 @@ static void Entry()
     // configuration variables
     int seed{};
     int particles_count{ PARTICLES_COUNT_START };
+    bool invert_camera_mouse_x{};
 
     // uniform distribution between [0, 1)
     std::uniform_real_distribution<float> dis{ 0.0f, 1.0f };
@@ -1037,7 +1038,7 @@ static void Entry()
                         // update camera yaw and pitch, only when the RIGHT MOUSE BUTTON is pressed
                         if (s_mouse.right)
                         {
-                            camera.yaw_deg += s_mouse.dx * frame_dt_sec * MOUSE_SENSITIVITY;
+                            camera.yaw_deg += (invert_camera_mouse_x ? -1.0f : +1.0f) * s_mouse.dx * frame_dt_sec * MOUSE_SENSITIVITY;
                             camera.pitch_deg -= s_mouse.dy * frame_dt_sec * MOUSE_SENSITIVITY;
                             camera.pitch_deg = std::clamp(camera.pitch_deg, CAMERA_MIN_PITCH_DEG, CAMERA_MAX_PITCH_DEG);
                         }
@@ -1277,6 +1278,7 @@ static void Entry()
                         {
                             ImGui::DragInt("Seed", &seed, 1.0f);
                             ImGui::DragInt("Particles", &particles_count, 1.0f, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
+                            ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
                         }
                         if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
                         {
