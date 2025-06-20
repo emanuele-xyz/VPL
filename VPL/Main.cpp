@@ -753,6 +753,88 @@ struct Ray
     Vector3 direction;
 };
 
+struct RayHit
+{
+    bool valid;
+    Vector3 position;
+    Vector3 normal;
+};
+
+using RayIntersectFn = RayHit(Ray ray, const Matrix& model, const Matrix& normal);
+
+static RayHit RayQuadIntersect(Ray ray, const Matrix& model, const Matrix& normal)
+{
+    /*
+        ray/quad intersection test in local space
+
+        ray: p(t) = o + td
+        plane p.n + s = 0
+
+        quad in local space lies on z=0 (we know it because we know how the quad mesh has been defined)
+        n: (0,0,1)
+        s: 0
+        plane: p.(0,0,1) = 0
+
+        we plug the ray equation into the plane equation
+
+        (o + td).(0,0,1) = 0
+        o.(0,0,1) + td.(0,0,1) = 0
+        o_z + t * d_z = 0
+        t * d_z = - o_z
+        t = - o_z / d_z
+
+        if d_z != 0 then t exists
+        since we have a ray t must also be >= 0
+
+        if both conditions are met, there is an intersection at point p(t)
+    */
+
+    RayHit hit{};
+
+    // inverse transform: world -> model
+    Matrix inverse_model{ model.Invert() };
+
+    // transform world space ray into model space ray
+    {
+        Vector4 origin{ ray.origin.x, ray.origin.y, ray.origin.z, 1.0f }; // influenced by translations
+        Vector4 direction{ ray.direction.x, ray.direction.y, ray.direction.z, 0.0f }; // NOT influenced by translations
+
+        origin = Vector4::Transform(origin, inverse_model); // local space ray origin
+        direction = Vector4::Transform(direction, inverse_model); // local space ray direction
+
+        ray.origin = { origin.x, origin.y, origin.z };
+        ray.direction = { direction.x, direction.y, direction.z };
+    }
+
+    // ray/plane intersection in local space
+    if (ray.direction.z != 0)
+    {
+        float t{ -(ray.origin.z) / (ray.direction.z) };
+        if (t > 0) // we ignore hits at the ray's origin
+        {
+            // find hit local space position 
+            Vector3 local_hit{ ray.origin + t * ray.direction };
+
+            // check whether local_hit is within the quad's bounds or not
+            if ((-0.5f <= local_hit.x && local_hit.x <= +0.5f) && (-0.5f <= local_hit.y && local_hit.y <= +0.5f))
+            {
+                hit.valid = true;
+
+                // compute world hit
+                Vector4 world_hit{ Vector4::Transform({local_hit.x, local_hit.y, local_hit.z, 1.0f}, model) };
+                hit.position = { world_hit.x, world_hit.y, world_hit.z };
+
+                // compute normal at hit point
+                Vector4 local_normal{ 0.0f, 0.0f, 1.0f, 0.0f }; // NOT influenced by translations
+                Vector4 world_normal{ Vector4::Transform(local_normal, normal) };
+                hit.normal = { world_normal.x, world_normal.y, world_normal.z };
+            }
+        }
+    }
+
+    return hit;
+}
+
 // ----------------------------------------------------------------------------
 // Scene
 // ----------------------------------------------------------------------------
@@ -776,6 +858,9 @@ struct Object
     Vector3 scaling{ 1.0f, 1.0f, 1.0f };
     Mesh* mesh{};
     Vector3 albedo{ 1.0f, 1.0f, 1.0f };
+    RayIntersectFn* ray_intersect_fn{};
+    Matrix model{ Matrix::Identity };
+    Matrix normal{ Matrix::Identity };
 };
 
 struct PointLight
@@ -944,6 +1029,7 @@ static void Entry()
             floor.scaling = { 10.0f, 10.0f, 1.0f };
             floor.mesh = &quad_mesh;
             floor.albedo = { 0.0f, 0.0f, 1.0f };
+            floor.ray_intersect_fn = RayQuadIntersect;
         }
         // cube
         {
@@ -957,6 +1043,9 @@ static void Entry()
 
     // rays
     std::vector<Ray> rays{};
+
+    // ray hits
+    std::vector<RayHit> hits{}; // TODO: to be removed
 
     // validate scene objects: no two objects can have the same name
     {
@@ -1084,6 +1173,26 @@ static void Entry()
                         }
                     }
 
+                    // update object model and normal matrices (any change to the object's transform MUST happen BEFORE this)
+                    for (Object& obj : objects)
+                    {
+                        Vector3 rotation_rad{};
+                        rotation_rad.x = DirectX::XMConvertToRadians(obj.rotation.x);
+                        rotation_rad.y = DirectX::XMConvertToRadians(obj.rotation.y);
+                        rotation_rad.z = DirectX::XMConvertToRadians(obj.rotation.z);
+
+                        Matrix translate{ Matrix::CreateTranslation(obj.position) };
+                        Matrix rotate{ Matrix::CreateFromYawPitchRoll(rotation_rad) };
+                        Matrix scale{ Matrix::CreateScale(obj.scaling) };
+                        Matrix model{ scale * rotate * translate };
+                        Matrix normal{ scale * rotate };
+                        normal.Invert();
+                        normal.Transpose();
+
+                        obj.model = model;
+                        obj.normal = normal;
+                    }
+
                     // shoot rays from the point light
                     {
                         rays.clear(); // forget the previous frame's rays
@@ -1105,6 +1214,52 @@ static void Entry()
                                 ray.origin = point_light.position;
                                 ray.direction = { x, y, z };
                                 rays.emplace_back(ray);
+                            }
+                        }
+                    }
+
+                    // instersect rays with the scene
+                    {
+                        hits.clear(); // forget the previous frame's hits
+
+                        for (const Ray& ray : rays)
+                        {
+                            RayHit closest{};
+
+                            for (const Object& obj : objects)
+                            {
+                                if (obj.ray_intersect_fn)
+                                {
+                                    RayHit hit{ obj.ray_intersect_fn(ray, obj.model, obj.normal) };
+                                    if (hit.valid)
+                                    {
+                                        // check if the current hit is closer than the closest hit recorded up until now
+                                        if (!closest.valid) // cloeset hit up until now is not valid
+                                        {
+                                            // current hit is closer
+                                            closest = hit;
+                                        }
+                                        else // cloeset hit up until now is valid
+                                        {
+                                            // we need to compare the distance between both hits and the ray origin
+                                            Vector3 o_closest{ closest.position - ray.origin }; // from ray origin to closest hit position
+                                            Vector3 o_hit{ hit.position - ray.origin }; // from ray origin to current hit position
+                                            float d_o_closest{ o_closest.Dot(o_closest) }; // squared adistance between ray origin and closest hit 
+                                            float d_o_hit{ o_hit.Dot(o_hit) }; // squared adistance between ray origin and current hit 
+                                            if (d_o_hit < d_o_closest)
+                                            {
+                                                // current hit is closer than closest hit
+                                                closest = hit;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // if the ray hit somthing, save the closest hit
+                            if (closest.valid)
+                            {
+                                hits.emplace_back(closest);
                             }
                         }
                     }
@@ -1166,23 +1321,10 @@ static void Entry()
                         {
                             // upload object constants
                             {
-                                Vector3 rotation_rad{};
-                                rotation_rad.x = DirectX::XMConvertToRadians(obj.rotation.x);
-                                rotation_rad.y = DirectX::XMConvertToRadians(obj.rotation.y);
-                                rotation_rad.z = DirectX::XMConvertToRadians(obj.rotation.z);
-
-                                Matrix translate{ Matrix::CreateTranslation(obj.position) };
-                                Matrix rotate{ Matrix::CreateFromYawPitchRoll(rotation_rad) };
-                                Matrix scale{ Matrix::CreateScale(obj.scaling) };
-                                Matrix model{ scale * rotate * translate };
-                                Matrix normal{ scale * rotate };
-                                normal.Invert();
-                                normal.Transpose();
-
                                 SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                                 auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                                constants->model = model;
-                                constants->normal = normal;
+                                constants->model = obj.model;
+                                constants->normal = obj.normal;
                                 constants->albedo = obj.albedo;
                             }
 
@@ -1197,7 +1339,7 @@ static void Entry()
 
                     // render point light
                     {
-                        // upload light impostor object constants
+                        // upload object constants (light impostor cube)
                         {
                             float point_ligt_diameter{ POINT_LIGHT_RADIUS * 2.0f };
 
@@ -1231,7 +1373,7 @@ static void Entry()
                     // render rays (using lines)
                     for (const Ray& ray : rays)
                     {
-                        // upload object constants
+                        // upload object constants (line)
                         {
                             SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                             auto constants{ static_cast<ObjectConstants*>(map.Data()) };
@@ -1260,6 +1402,43 @@ static void Entry()
 
                         // draw
                         d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
+                    }
+
+                    // render hits // TODO: to be removed/modified
+                    for (const RayHit& hit : hits)
+                    {
+                        float radius{ POINT_LIGHT_RADIUS / 2.0f };
+
+                        // upload object constants
+                        {
+                            float diameter{ radius * 2.0f };
+
+                            Matrix translate{ Matrix::CreateTranslation(hit.position) };
+                            Matrix scale{ Matrix::CreateScale({diameter, diameter, diameter}) };
+                            Matrix model{ scale * translate };
+
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = model;
+                        }
+
+                        // upload light constants
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<LightConstants*>(map.Data()) };
+                            constants->world_position = hit.position;
+                            constants->radius = radius;
+                            constants->color = point_light.color;
+                        }
+
+                        // set pipeline state
+                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
+                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
+                        d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
+
+                        // draw
+                        d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
                 }
 
