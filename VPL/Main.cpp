@@ -1404,7 +1404,7 @@ static void Entry()
                         d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                     }
 
-                    // render hits // TODO: to be removed/modified
+                    // render hits // TODO: to be moved to render Debug VPLs
                     for (const RayHit& hit : hits)
                     {
                         float radius{ POINT_LIGHT_RADIUS / 2.0f };
@@ -1439,6 +1439,40 @@ static void Entry()
 
                         // draw
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
+                    }
+
+                    // render hits normals (using lines) // TODO: to be moved to render Debug VPLs
+                    for (const RayHit& hit : hits)
+                    {
+                        // upload object constants (line)
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = Matrix::Identity; // we pass line vertices in world space
+                            constants->albedo = { 1.0f, 0.0f, 1.0f }; // obnoxious pink 
+                        }
+
+                        // upload line vertices
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto vertices{ static_cast<Vertex*>(map.Data()) };
+                            vertices[0] = { .position = { hit.position} };
+                            vertices[1] = { .position = { hit.position + 0.5f * hit.normal} }; // TODO: hardcoded for now
+                        }
+
+                        // set pipeline state
+                        {
+                            ID3D11Buffer* vbufs[]{ vb_line.Get() };
+                            UINT strides[]{ sizeof(Vertex) };
+                            UINT offsets[]{ 0 };
+
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                            d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
+                            d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                        }
+
+                        // draw
+                        d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                     }
                 }
 
