@@ -827,6 +827,130 @@ static RayHit RayQuadIntersect(Ray ray, const Matrix& model, const Matrix& norma
                 // compute normal at hit point
                 Vector4 local_normal{ 0.0f, 0.0f, 1.0f, 0.0f }; // NOT influenced by translations
                 Vector4 world_normal{ Vector4::Transform(local_normal, normal) };
+                world_normal.Normalize();
+                hit.normal = { world_normal.x, world_normal.y, world_normal.z };
+            }
+        }
+    }
+
+    return hit;
+}
+
+static RayHit RayBoxIntersect(Ray ray, const Matrix& model, const Matrix& normal)
+{
+    /*
+        ray/box intersection test in local space
+
+        ray: p(t) = o + td
+
+        in local space, the box is an AABB from (-0.5, -0.5, -0.5) to (+0.5, +0.5, +0.5)
+        we can consider the box as being made up of three slabs
+        - one slab with normal (0, 0, 1) and shifts -0.5, +0.5
+        - one slab with normal (0, 1, 0) and shifts -0.5, +0.5
+        - one slab with normal (1, 0, 0) and shifts -0.5, +0.5
+
+        we use the slab method for finding the ray/box intersection
+        - we intersect the ray with the first slab, finding an interval for t
+        - we intersect the ray with the second slab, finding an interval for t
+        - we intersect the ray with the third slab, finding an interval for t
+
+        if the intersection of the found intervals is not empty, we have an intersection point at p(t)
+    */
+
+    RayHit hit{};
+
+    // inverse transform: world -> model
+    Matrix inverse_model{ model.Invert() };
+
+    // transform world space ray into model space ray
+    {
+        Vector4 origin{ ray.origin.x, ray.origin.y, ray.origin.z, 1.0f }; // influenced by translations
+        Vector4 direction{ ray.direction.x, ray.direction.y, ray.direction.z, 0.0f }; // NOT influenced by translations
+
+        origin = Vector4::Transform(origin, inverse_model); // local space ray origin
+        direction = Vector4::Transform(direction, inverse_model); // local space ray direction
+
+        ray.origin = { origin.x, origin.y, origin.z };
+        ray.direction = { direction.x, direction.y, direction.z };
+    }
+
+    /*
+        ray/slab intersection (slab 1)
+
+        slab:
+        p.(0,0,1) - 0.5 = 0
+        p.(0,0,1) + 0.5 = 0
+
+        we plug the ray equation
+
+        (o + t_a * d).(0, 0, 1) - 0.5 = 0
+        o.(0,0,1) + (t_a * d).(0,0,1) - 0.5 = 0
+        o_z + t_a * d_z - 0.5 = 0
+        t_a * d_z = 0.5 - o_z
+        t_a = (0.5 - o_z) / d_z
+
+        analogously
+
+        t_b = (-0.5 - o_z) / d_z
+
+        it is easy to derive the formulas for the other slabs
+    */
+
+    float t_min{ 0.0f }; // intervals intersection lower bound
+    float t_max{ std::numeric_limits<float>::infinity() }; // intervals intersection upper bound
+    {
+        float ray_origin[3]{ ray.origin.x, ray.origin.y, ray.origin.z };
+        float ray_direction[3]{ ray.direction.x, ray.direction.y, ray.direction.z };
+
+        for (int i{}; i < 3; i++) // the hardcoded 3 stands for the three slabs
+        {
+            if (ray_direction[i] != 0) // there is an intersection
+            {
+                // find interval
+                float t_a{ (+0.5f - ray_origin[i]) / ray_direction[i] };
+                float t_b{ (-0.5f - ray_origin[i]) / ray_direction[i] };
+
+                // intersect found interval
+                t_min = std::max(t_min, std::min(t_a, t_b));
+                t_max = std::min(t_max, std::max(t_a, t_b));
+            }
+            else // there is no intersection
+            {
+                t_max = t_min; // collapse the intervals intersection into a single value
+            }
+        }
+    }
+
+    if (t_min < t_max) // the ray intersects the box (we ignore single value intervals)
+    {
+        if (t_min > 0) // we ignore hits at the ray's origin
+        {
+            hit.valid = true;
+
+            // find hit local space position 
+            Vector3 local_hit{ ray.origin + t_min * ray.direction };
+
+            // compute world hit
+            Vector4 world_hit{ Vector4::Transform({local_hit.x, local_hit.y, local_hit.z, 1.0f}, model) };
+            hit.position = { world_hit.x, world_hit.y, world_hit.z };
+
+            // find hit normal
+            {
+                float local_normal[3]{};
+                float hit_position[3]{ local_hit.x, local_hit.y, local_hit.z };
+
+                constexpr float EPSILON{ 0.0001 }; // TODO: hardcoded epsilon
+                for (int i{}; i < 3; i++)
+                {
+                    if (std::abs(std::abs(hit_position[i]) - 0.5f) < EPSILON)
+                    {
+                        local_normal[i] = hit_position[i] > 0.0f ? +1.0f : -1.0f;
+                        break;
+                    }
+                }
+
+                Vector4 world_normal{ Vector4::Transform({local_normal[0], local_normal[1], local_normal[2], 0.0f}, normal) };
+                world_normal.Normalize();
                 hit.normal = { world_normal.x, world_normal.y, world_normal.z };
             }
         }
@@ -1038,6 +1162,7 @@ static void Entry()
             cube.position = { 0.0f, 0.5f, 0.0f };
             cube.mesh = &cube_mesh;
             cube.albedo = { 1.0f, 0.0f, 0.0f };
+            cube.ray_intersect_fn = RayBoxIntersect;
         }
     }
 
