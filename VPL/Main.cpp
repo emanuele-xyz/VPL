@@ -86,7 +86,11 @@ constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
 constexpr float MOUSE_SENSITIVITY{ 5.0f };
 constexpr float POINT_LIGHT_RADIUS{ 0.25f };
 constexpr UINT LINE_VERTEX_COUNT{ 2 };
-constexpr Vector3 LINE_COLOR{ 0.0f, 1.0f, 0.0f };
+constexpr Vector3 LINE_OK_COLOR{ 0.0f, 1.0f, 0.0f };
+constexpr Vector3 LINE_ERROR_COLOR{ 1.0f, 0.0f, 0.0f };
+constexpr Vector3 LINE_NORMAL_COLOR{ 1.0f, 0.0f, 1.0f };
+constexpr float LINE_NORMAL_T{ 0.5f };
+constexpr float LINE_ERROR_T{ 10.0f };
 constexpr int PARTICLES_COUNT_START{ 10 };
 constexpr int PARTICLES_COUNT_MIN{ 1 };
 constexpr int PARTICLES_COUNT_MAX{ 1000 };
@@ -997,6 +1001,16 @@ struct PointLight
 };
 
 // ----------------------------------------------------------------------------
+// VPL
+// ----------------------------------------------------------------------------
+
+struct LightPathNode
+{
+    Ray ray;
+    RayHit hit;
+};
+
+// ----------------------------------------------------------------------------
 // Application's Entry Point (may throw an exception)
 // ----------------------------------------------------------------------------
 
@@ -1219,11 +1233,8 @@ static void Entry()
         obj.ray_intersect_fn = RayQuadIntersect;
     }
 
-    // rays
-    std::vector<Ray> rays{};
-
-    // ray hits
-    std::vector<RayHit> hits{}; // TODO: to be removed
+    // light paths
+    std::vector<std::vector<LightPathNode>> light_paths{};
 
     // validate scene objects: no two objects can have the same name
     {
@@ -1386,9 +1397,9 @@ static void Entry()
                         obj.normal = normal;
                     }
 
-                    // shoot rays from the point light
+                    // start new light paths by shooting random rays from the point light
                     {
-                        rays.clear(); // forget the previous frame's rays
+                        light_paths.clear(); // forget the previous frame's light paths
 
                         // generate random ray direction from random positions on a unit sphere
                         {
@@ -1406,21 +1417,24 @@ static void Entry()
                                 Ray ray{};
                                 ray.origin = point_light.position;
                                 ray.direction = { x, y, z };
-                                rays.emplace_back(ray);
+
+                                // generate new light path with randomly generated starting ray
+                                std::vector<LightPathNode>& light_path{ light_paths.emplace_back() };
+                                LightPathNode start{};
+                                start.ray = ray;
+                                light_path.emplace_back(start);
                             }
                         }
                     }
 
-                    // instersect rays with the scene
+                    // build light paths by intersecting rays with the scene geometry and eventually making them bounce
                     {
-                        hits.clear(); // forget the previous frame's hits
-
-                        // we iterate over the first particles_count rays. During the iteration, we append other rays
-                        for (int i{}; i < particles_count; i++)
+                        for (int i{}; i < static_cast<int>(light_paths.size()); i++)
                         {
-                            Ray ray{ rays[i] };
-                            int bounce{}; // number of ray bounces
-                            bool ray_hit_something{ true };
+                            std::vector<LightPathNode>& light_path{ light_paths[i] }; // light path we are building
+
+                            int bounce{}; // counter for the number of ray bounces
+                            bool last_ray_hit_something{ true };
 
                             /*
                                 This while loop deals with ray bounce logic.
@@ -1432,8 +1446,9 @@ static void Entry()
                                 - the first mean_reflectivity^j * N rays bounce at least j times.
                                 - and so on ...
                             */
-                            while (i < static_cast<int>(std::pow(mean_reflectivity, bounce) * particles_count) && ray_hit_something)
+                            while (i < static_cast<int>(std::pow(mean_reflectivity, bounce) * particles_count) && last_ray_hit_something)
                             {
+                                Ray ray{ light_path.back().ray }; // starting ray
                                 RayHit closest{}; // closest ray hit
 
                                 for (const Object& obj : objects) // test each object for ray intersection
@@ -1466,17 +1481,21 @@ static void Entry()
                                 if (closest.valid) // the ray hit something
                                 {
                                     // compute ray reflection
-
                                     Vector3 reflection{ Vector3::Reflect(ray.direction, closest.normal) };
                                     Ray reflected_ray{ closest.position, reflection };
 
-                                    rays.emplace_back(reflected_ray); // save ray
-                                    hits.emplace_back(closest); // save the closest hit
+                                    // record current ray hit into the light path
+                                    light_path.back().hit = closest;
 
-                                    ray = reflected_ray; // the next ray to consider is the reflected one (this is the bounce)
+                                    // append the next light path node given by the reflected direction vector
+                                    {
+                                        LightPathNode next{};
+                                        next.ray = reflected_ray;
+                                        light_path.emplace_back(next);
+                                    }
                                 }
 
-                                ray_hit_something = closest.valid;
+                                last_ray_hit_something = closest.valid;
 
                                 bounce++; // go to the next bounce
                             }
@@ -1589,109 +1608,142 @@ static void Entry()
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
 
-                    // render rays (using lines)
-                    for (const Ray& ray : rays)
+                    // render light paths hits // TODO: to be moved to render Debug VPLs
+                    for (const std::vector<LightPathNode>& light_path : light_paths)
                     {
-                        // upload object constants (line)
+                        for (const LightPathNode& node : light_path)
                         {
-                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = Matrix::Identity; // we pass line vertices in world space
-                            constants->albedo = LINE_COLOR;
+                            if (node.hit.valid)
+                            {
+                                float radius{ POINT_LIGHT_RADIUS / 2.0f };
+
+                                // upload object constants
+                                {
+                                    float diameter{ radius * 2.0f };
+
+                                    Matrix translate{ Matrix::CreateTranslation(node.hit.position) };
+                                    Matrix scale{ Matrix::CreateScale({diameter, diameter, diameter}) };
+                                    Matrix model{ scale * translate };
+
+                                    SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                    auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                    constants->model = model;
+                                }
+
+                                // upload light constants
+                                {
+                                    SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                    auto constants{ static_cast<LightConstants*>(map.Data()) };
+                                    constants->world_position = node.hit.position;
+                                    constants->radius = radius;
+                                    constants->color = point_light.color;
+                                }
+
+                                // set pipeline state
+                                d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
+                                d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
+                                d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
+
+                                // draw
+                                d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
+                            }
                         }
-
-                        // upload line vertices
-                        {
-                            SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto vertices{ static_cast<Vertex*>(map.Data()) };
-                            vertices[0] = { .position = { ray.origin } };
-                            vertices[1] = { .position = { ray.origin + 10.0f * ray.direction } }; // TODO: hardcoded for now
-                        }
-
-                        // set pipeline state
-                        {
-                            ID3D11Buffer* vbufs[]{ vb_line.Get() };
-                            UINT strides[]{ sizeof(Vertex) };
-                            UINT offsets[]{ 0 };
-
-                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-                            d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
-                            d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
-                        }
-
-                        // draw
-                        d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                     }
 
-                    // render hits // TODO: to be moved to render Debug VPLs
-                    for (const RayHit& hit : hits)
+                    // render light paths
+                    for (const std::vector<LightPathNode>& light_path : light_paths)
                     {
-                        float radius{ POINT_LIGHT_RADIUS / 2.0f };
-
-                        // upload object constants
+                        for (int i{}; i < static_cast<int>(light_path.size()); i++)
                         {
-                            float diameter{ radius * 2.0f };
+                            LightPathNode node{ light_path[i] };
 
-                            Matrix translate{ Matrix::CreateTranslation(hit.position) };
-                            Matrix scale{ Matrix::CreateScale({diameter, diameter, diameter}) };
-                            Matrix model{ scale * translate };
+                            /*
+                                When rendering a light path, we draw only segments with both ends.
+                                An exception are light paths that have no hits. 
+                                For such paths we render only a segment.
+                                We do this because we want to be able to see which paths get lost.
+                            */
+                            if (i == 0 || node.hit.valid)
+                            {
+                                // upload object constants (line)
+                                {
+                                    SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                    auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                    constants->model = Matrix::Identity; // we pass line vertices in world space
+                                    constants->albedo = node.hit.valid ? LINE_OK_COLOR : LINE_ERROR_COLOR;
+                                }
 
-                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = model;
+                                // upload line vertices
+                                {
+                                    SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                    auto vertices{ static_cast<Vertex*>(map.Data()) };
+                                    if (node.hit.valid)
+                                    {
+                                        vertices[0] = { .position = { node.ray.origin } };
+                                        vertices[1] = { .position = { node.hit.position } };
+                                    }
+                                    else
+                                    {
+                                        vertices[0] = { .position = { node.ray.origin } };
+                                        vertices[1] = { .position = { node.ray.origin + LINE_ERROR_T * node.ray.direction } };
+                                    }
+                                }
+
+                                // set pipeline state
+                                {
+                                    ID3D11Buffer* vbufs[]{ vb_line.Get() };
+                                    UINT strides[]{ sizeof(Vertex) };
+                                    UINT offsets[]{ 0 };
+
+                                    d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                                    d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
+                                    d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                                }
+
+                                // draw
+                                d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
+                            }
                         }
-
-                        // upload light constants
-                        {
-                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<LightConstants*>(map.Data()) };
-                            constants->world_position = hit.position;
-                            constants->radius = radius;
-                            constants->color = point_light.color;
-                        }
-
-                        // set pipeline state
-                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
-                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
-                        d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
-
-                        // draw
-                        d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
 
-                    // render hits normals (using lines) // TODO: to be moved to render Debug VPLs
-                    for (const RayHit& hit : hits)
+                    // render hits normals // TODO: to be moved to render Debug VPLs
+                    for (const std::vector<LightPathNode>& light_path : light_paths)
                     {
-                        // upload object constants (line)
+                        for (const LightPathNode& node : light_path)
                         {
-                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = Matrix::Identity; // we pass line vertices in world space
-                            constants->albedo = { 1.0f, 0.0f, 1.0f }; // obnoxious pink 
+                            if (node.hit.valid)
+                            {
+                                // upload object constants (line)
+                                {
+                                    SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                    auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                    constants->model = Matrix::Identity; // we pass line vertices in world space
+                                    constants->albedo = LINE_NORMAL_COLOR; // obnoxious pink 
+                                }
+
+                                // upload line vertices
+                                {
+                                    SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                    auto vertices{ static_cast<Vertex*>(map.Data()) };
+                                    vertices[0] = { .position = { node.hit.position} };
+                                    vertices[1] = { .position = { node.hit.position + LINE_NORMAL_T * node.hit.normal} };
+                                }
+
+                                // set pipeline state
+                                {
+                                    ID3D11Buffer* vbufs[]{ vb_line.Get() };
+                                    UINT strides[]{ sizeof(Vertex) };
+                                    UINT offsets[]{ 0 };
+
+                                    d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                                    d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
+                                    d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                                }
+
+                                // draw
+                                d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
+                            }
                         }
-
-                        // upload line vertices
-                        {
-                            SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto vertices{ static_cast<Vertex*>(map.Data()) };
-                            vertices[0] = { .position = { hit.position} };
-                            vertices[1] = { .position = { hit.position + 0.5f * hit.normal} }; // TODO: hardcoded for now
-                        }
-
-                        // set pipeline state
-                        {
-                            ID3D11Buffer* vbufs[]{ vb_line.Get() };
-                            UINT strides[]{ sizeof(Vertex) };
-                            UINT offsets[]{ 0 };
-
-                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-                            d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
-                            d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
-                        }
-
-                        // draw
-                        d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                     }
                 }
 
