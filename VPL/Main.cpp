@@ -1143,31 +1143,80 @@ static void Entry()
 
     // scene point light
     PointLight point_light{};
-    point_light.position = { 1.0f, 2.0f, 1.0f };
+    point_light.position = { 0.0f, 3.25f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
 
     // scene objects
     std::vector<Object> objects{};
     {
-        // floor
-        {
-            Object& floor{ objects.emplace_back() };
-            floor.name = "floor";
-            floor.rotation = { 270.0f, 0.0f, 0.0f };
-            floor.scaling = { 10.0f, 10.0f, 1.0f };
-            floor.mesh = &quad_mesh;
-            floor.albedo = { 0.0f, 0.0f, 1.0f };
-            floor.ray_intersect_fn = RayQuadIntersect;
-        }
-        // cube
-        {
-            Object& cube{ objects.emplace_back() };
-            cube.name = "cube";
-            cube.position = { 0.0f, 0.5f, 0.0f };
-            cube.mesh = &cube_mesh;
-            cube.albedo = { 1.0f, 0.0f, 0.0f };
-            cube.ray_intersect_fn = RayBoxIntersect;
-        }
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Left Cube";
+        obj.position = { -0.40f, 1.35f, -0.75f };
+        obj.rotation = { 0.0f, 20.0f, 0.0f };
+        obj.scaling = { 1.5f, 2.75f, 1.0f };
+        obj.mesh = &cube_mesh;
+        obj.albedo = { 1.0f, 1.0f, 1.0f };
+        obj.ray_intersect_fn = RayBoxIntersect;
+    }
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Right Cube";
+        obj.position = { 1.0f, 0.61f, 1.15f };
+        obj.rotation = { 0.0f, -15.0f, 0.0f };
+        obj.scaling = { 1.25f, 1.25f, 1.25f };
+        obj.mesh = &cube_mesh;
+        obj.albedo = { 1.0f, 1.0f, 1.0f };
+        obj.ray_intersect_fn = RayBoxIntersect;
+    }
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Floor";
+        obj.position = {};
+        obj.rotation = { 270.0f, 0.0f, 0.0f };
+        obj.scaling = { 4.0f, 4.0f, 1.0f };
+        obj.mesh = &quad_mesh;
+        obj.albedo = { 1.0f, 1.0f, 1.0f };
+        obj.ray_intersect_fn = RayQuadIntersect;
+    }
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Cieling";
+        obj.position = { 0.0f, 4.0f, 0.0f };
+        obj.rotation = { 90.0f, 0.0f, 0.0f };
+        obj.scaling = { 4.0f, 4.0f, 1.0f };
+        obj.mesh = &quad_mesh;
+        obj.albedo = { 1.0f, 1.0f, 1.0f };
+        obj.ray_intersect_fn = RayQuadIntersect;
+    }
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Left Wall";
+        obj.position = { -2.0f, 2.0f, 0.0f };
+        obj.rotation = { 0.0f, 90.0f, 0.0f };
+        obj.scaling = { 4.0f, 4.0f, 1.0f };
+        obj.mesh = &quad_mesh;
+        obj.albedo = { 1.0f, 0.0f, 0.0f };
+        obj.ray_intersect_fn = RayQuadIntersect;
+    }
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Right Wall";
+        obj.position = { 2.0f, 2.0f, 0.0f };
+        obj.rotation = { 0.0f, 270.0f, 0.0f };
+        obj.scaling = { 4.0f, 4.0f, 1.0f };
+        obj.mesh = &quad_mesh;
+        obj.albedo = { 0.0f, 1.0f, 0.0f };
+        obj.ray_intersect_fn = RayQuadIntersect;
+    }
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Back Wall";
+        obj.position = { 0.0f, 2.0f, -2.0f };
+        obj.rotation = { 0.0f, 0.0f, 0.0f };
+        obj.scaling = { 4.0f, 4.0f, 1.0f };
+        obj.mesh = &quad_mesh;
+        obj.albedo = { 1.0f, 1.0f, 1.0f };
+        obj.ray_intersect_fn = RayQuadIntersect;
     }
 
     // rays
