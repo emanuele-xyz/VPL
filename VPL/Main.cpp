@@ -90,6 +90,9 @@ constexpr Vector3 LINE_COLOR{ 0.0f, 1.0f, 0.0f };
 constexpr int PARTICLES_COUNT_START{ 10 };
 constexpr int PARTICLES_COUNT_MIN{ 1 };
 constexpr int PARTICLES_COUNT_MAX{ 1000 };
+constexpr float MEAN_REFLECTIVITY_START{ 0.5f };
+constexpr float MEAN_REFLECTIVITY_MIN{ 0.1f };
+constexpr float MEAN_REFLECTIVITY_MAX{ 0.9f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1122,6 +1125,7 @@ static void Entry()
     // configuration variables
     int seed{};
     int particles_count{ PARTICLES_COUNT_START };
+    float mean_reflectivity{ MEAN_REFLECTIVITY_START };
     bool invert_camera_mouse_x{};
 
     // uniform distribution between [0, 1)
@@ -1188,6 +1192,15 @@ static void Entry()
         }
     }
 
+    // validate scene objects: all objects must be able to intersect with a ray
+    for (const Object& obj : objects)
+    {
+        if (!obj.ray_intersect_fn)
+        {
+            Crash(std::format("object '{}' doesn't support ray intersection", obj.name));
+        }
+    }
+
     // time data
     const LARGE_INTEGER performance_counter_frequency{ GetWin32PerformanceFrequency() };
     LARGE_INTEGER frame_timestamp{ GetWin32PerformanceCounter() };
@@ -1206,6 +1219,12 @@ static void Entry()
             }
             else
             {
+                // validate configutation variables
+                {
+                    particles_count = std::clamp(particles_count, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
+                    mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
+                }
+
                 // update input state
                 {
                     // compute mouse delta
@@ -1347,16 +1366,31 @@ static void Entry()
                     {
                         hits.clear(); // forget the previous frame's hits
 
-                        for (const Ray& ray : rays)
+                        // we iterate over the first particles_count rays. During the iteration, we append other rays
+                        for (int i{}; i < particles_count; i++)
                         {
-                            RayHit closest{};
+                            Ray ray{ rays[i] };
+                            int bounce{}; // number of ray bounces
+                            bool ray_hit_something{ true };
 
-                            for (const Object& obj : objects)
+                            /*
+                                This while loop deals with ray bounce logic.
+                                Keller tells us that:
+                                - the first mean_reflectivity^1 * N rays bounce at least once.
+                                - the first mean_reflectivity^2 * N rays bounce at least twice.
+                                - the first mean_reflectivity^3 * N rays bounce at least trice.
+                                - ...
+                                - the first mean_reflectivity^j * N rays bounce at least j times.
+                                - and so on ...
+                            */
+                            while (i < static_cast<int>(std::pow(mean_reflectivity, bounce) * particles_count) && ray_hit_something)
                             {
-                                if (obj.ray_intersect_fn)
+                                RayHit closest{}; // closest ray hit
+
+                                for (const Object& obj : objects) // test each object for ray intersection
                                 {
                                     RayHit hit{ obj.ray_intersect_fn(ray, obj.model, obj.normal) };
-                                    if (hit.valid)
+                                    if (hit.valid) // there is an intersection point
                                     {
                                         // check if the current hit is closer than the closest hit recorded up until now
                                         if (!closest.valid) // cloeset hit up until now is not valid
@@ -1379,12 +1413,23 @@ static void Entry()
                                         }
                                     }
                                 }
-                            }
 
-                            // if the ray hit somthing, save the closest hit
-                            if (closest.valid)
-                            {
-                                hits.emplace_back(closest);
+                                if (closest.valid) // the ray hit something
+                                {
+                                    // compute ray reflection
+
+                                    Vector3 reflection{ Vector3::Reflect(ray.direction, closest.normal) };
+                                    Ray reflected_ray{ closest.position, reflection };
+
+                                    rays.emplace_back(reflected_ray); // save ray
+                                    hits.emplace_back(closest); // save the closest hit
+
+                                    ray = reflected_ray; // the next ray to consider is the reflected one (this is the bounce)
+                                }
+
+                                ray_hit_something = closest.valid;
+
+                                bounce++; // go to the next bounce
                             }
                         }
                     }
@@ -1616,6 +1661,7 @@ static void Entry()
                         {
                             ImGui::DragInt("Seed", &seed, 1.0f);
                             ImGui::DragInt("Particles", &particles_count, 1.0f, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
+                            ImGui::DragFloat("Mean Reflectivity", &mean_reflectivity, 0.001f, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                             ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
                         }
                         if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
