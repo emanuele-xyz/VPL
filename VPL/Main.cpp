@@ -1460,8 +1460,6 @@ static void Entry()
                                 RayHit closest{}; // closest ray hit
                                 const Object* closest_obj{}; // closest object hit
 
-                                // TODO: sabe closest hit object
-
                                 for (const Object& obj : objects) // test each object for ray intersection
                                 {
                                     RayHit hit{ obj.ray_intersect_fn(ray, obj.model, obj.normal) };
