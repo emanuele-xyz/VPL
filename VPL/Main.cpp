@@ -1009,6 +1009,8 @@ struct LightPathNode
 {
     Ray ray;
     RayHit hit;
+    Vector3 ray_color;
+    Vector3 hit_color;
 };
 
 // ----------------------------------------------------------------------------
@@ -1142,6 +1144,7 @@ static void Entry()
     int particles_count{ PARTICLES_COUNT_START };
     float mean_reflectivity{ MEAN_REFLECTIVITY_START };
     bool draw_light_paths{ true };
+    bool draw_light_path_hit_color{};
     int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
     bool invert_camera_mouse_x{};
 
@@ -1426,6 +1429,7 @@ static void Entry()
                                 std::vector<LightPathNode>& light_path{ light_paths.emplace_back() };
                                 LightPathNode start{};
                                 start.ray = ray;
+                                start.ray_color = point_light.color;
                                 light_path.emplace_back(start);
                             }
                         }
@@ -1454,6 +1458,9 @@ static void Entry()
                             {
                                 Ray ray{ light_path.back().ray }; // starting ray
                                 RayHit closest{}; // closest ray hit
+                                const Object* closest_obj{}; // closest object hit
+
+                                // TODO: sabe closest hit object
 
                                 for (const Object& obj : objects) // test each object for ray intersection
                                 {
@@ -1465,6 +1472,7 @@ static void Entry()
                                         {
                                             // current hit is closer
                                             closest = hit;
+                                            closest_obj = &obj;
                                         }
                                         else // cloeset hit up until now is valid
                                         {
@@ -1477,6 +1485,7 @@ static void Entry()
                                             {
                                                 // current hit is closer than closest hit
                                                 closest = hit;
+                                                closest_obj = &obj;
                                             }
                                         }
                                     }
@@ -1488,13 +1497,18 @@ static void Entry()
                                     Vector3 reflection{ Vector3::Reflect(ray.direction, closest.normal) };
                                     Ray reflected_ray{ closest.position, reflection };
 
+                                    // compute hit albedo attenuating the ray's color by the object's albedo divided by PI
+                                    Vector3 hit_color{ (light_path.back().ray_color * closest_obj->albedo) / std::numbers::pi_v<float> };
+
                                     // record current ray hit into the light path
                                     light_path.back().hit = closest;
+                                    light_path.back().hit_color = hit_color;
 
                                     // append the next light path node given by the reflected direction vector
                                     {
                                         LightPathNode next{};
                                         next.ray = reflected_ray;
+                                        next.ray_color = hit_color;
                                         light_path.emplace_back(next);
                                     }
                                 }
@@ -1646,7 +1660,7 @@ static void Entry()
                                     auto constants{ static_cast<LightConstants*>(map.Data()) };
                                     constants->world_position = node.hit.position;
                                     constants->radius = radius;
-                                    constants->color = point_light.color;
+                                    constants->color = draw_light_path_hit_color ? node.hit_color : point_light.color;
                                 }
 
                                 // set pipeline state
@@ -1777,6 +1791,7 @@ static void Entry()
                             ImGui::DragInt("Particles", &particles_count, 1.0f, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                             ImGui::DragFloat("Mean Reflectivity", &mean_reflectivity, 0.001f, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                             ImGui::Checkbox("Draw Light Paths", &draw_light_paths);
+                            ImGui::Checkbox("Draw Light Path Hit Color", &draw_light_path_hit_color);
                             ImGui::DragInt("Light Path Index", &selected_light_path_index, 0.1f, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                             ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
                         }
