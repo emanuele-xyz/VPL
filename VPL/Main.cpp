@@ -97,6 +97,7 @@ constexpr int PARTICLES_COUNT_MAX{ 1000 };
 constexpr float MEAN_REFLECTIVITY_START{ 0.5f };
 constexpr float MEAN_REFLECTIVITY_MIN{ 0.1f };
 constexpr float MEAN_REFLECTIVITY_MAX{ 0.9f };
+constexpr int MIN_SELECTED_LIGHT_PATH_INDEX{ -1 };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1141,6 +1142,7 @@ static void Entry()
     int particles_count{ PARTICLES_COUNT_START };
     float mean_reflectivity{ MEAN_REFLECTIVITY_START };
     bool draw_light_paths{ true };
+    int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
     bool invert_camera_mouse_x{};
 
     // uniform distribution between [0, 1)
@@ -1284,6 +1286,7 @@ static void Entry()
                 {
                     particles_count = std::clamp(particles_count, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                     mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
+                    selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()));
                 }
 
                 // update input state
@@ -1613,6 +1616,9 @@ static void Entry()
                     // render light paths hits // TODO: to be moved to render Debug VPLs
                     for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
+                        // skip non selected light paths (when one is actually selected)
+                        if (selected_light_path_index >= 0 && i != selected_light_path_index) continue;
+
                         const std::vector<LightPathNode>& light_path{ light_paths[i] };
                         for (int j{}; j < static_cast<int>(light_path.size()); j++)
                         {
@@ -1657,6 +1663,9 @@ static void Entry()
                     // render light paths
                     for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
+                        // skip non selected light paths (when one is actually selected)
+                        if (selected_light_path_index >= 0 && i != selected_light_path_index) continue;
+
                         const std::vector<LightPathNode>& light_path{ light_paths[i] };
                         for (int j{}; j < static_cast<int>(light_path.size()); j++)
                         {
@@ -1709,6 +1718,9 @@ static void Entry()
                     // render hits normals // TODO: to be moved to render Debug VPLs
                     for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
+                        // skip non selected light paths (when one is actually selected)
+                        if (selected_light_path_index >= 0 && i != selected_light_path_index) continue;
+
                         const std::vector<LightPathNode>& light_path{ light_paths[i] };
                         for (const LightPathNode& node : light_path)
                         {
@@ -1765,6 +1777,7 @@ static void Entry()
                             ImGui::DragInt("Particles", &particles_count, 1.0f, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                             ImGui::DragFloat("Mean Reflectivity", &mean_reflectivity, 0.001f, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                             ImGui::Checkbox("Draw Light Paths", &draw_light_paths);
+                            ImGui::DragInt("Light Path Index", &selected_light_path_index, 0.1f, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()));
                             ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
                         }
                         if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
