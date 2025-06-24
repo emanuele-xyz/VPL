@@ -1140,6 +1140,7 @@ static void Entry()
     int seed{};
     int particles_count{ PARTICLES_COUNT_START };
     float mean_reflectivity{ MEAN_REFLECTIVITY_START };
+    bool draw_light_paths{ true };
     bool invert_camera_mouse_x{};
 
     // uniform distribution between [0, 1)
@@ -1521,7 +1522,6 @@ static void Entry()
                         ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get() };
 
                         d3d_ctx->ClearState();
-                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         d3d_ctx->IASetInputLayout(input_layout.Get());
                         d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
@@ -1567,6 +1567,7 @@ static void Entry()
                             }
 
                             // set pipeline state
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                             d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
                             d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
 
@@ -1600,19 +1601,22 @@ static void Entry()
                         }
 
                         // set pipeline state
-                        d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
+                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
                         d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
+                        d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
 
                         // draw
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
 
                     // render light paths hits // TODO: to be moved to render Debug VPLs
-                    for (const std::vector<LightPathNode>& light_path : light_paths)
+                    for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
-                        for (const LightPathNode& node : light_path)
+                        const std::vector<LightPathNode>& light_path{ light_paths[i] };
+                        for (int j{}; j < static_cast<int>(light_path.size()); j++)
                         {
+                            const LightPathNode& node{ light_path[j] };
                             if (node.hit.valid)
                             {
                                 float radius{ POINT_LIGHT_RADIUS / 2.0f };
@@ -1651,19 +1655,15 @@ static void Entry()
                     }
 
                     // render light paths
-                    for (const std::vector<LightPathNode>& light_path : light_paths)
+                    for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
-                        for (int i{}; i < static_cast<int>(light_path.size()); i++)
+                        const std::vector<LightPathNode>& light_path{ light_paths[i] };
+                        for (int j{}; j < static_cast<int>(light_path.size()); j++)
                         {
-                            LightPathNode node{ light_path[i] };
+                            LightPathNode node{ light_path[j] };
 
-                            /*
-                                When rendering a light path, we draw only segments with both ends.
-                                An exception are light paths that have no hits. 
-                                For such paths we render only a segment.
-                                We do this because we want to be able to see which paths get lost.
-                            */
-                            if (i == 0 || node.hit.valid)
+                            // if the current light path segment is valid, render it
+                            if (i < static_cast<int>(std::pow(mean_reflectivity, j) * particles_count))
                             {
                                 // upload object constants (line)
                                 {
@@ -1707,8 +1707,9 @@ static void Entry()
                     }
 
                     // render hits normals // TODO: to be moved to render Debug VPLs
-                    for (const std::vector<LightPathNode>& light_path : light_paths)
+                    for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
+                        const std::vector<LightPathNode>& light_path{ light_paths[i] };
                         for (const LightPathNode& node : light_path)
                         {
                             if (node.hit.valid)
@@ -1763,6 +1764,7 @@ static void Entry()
                             ImGui::DragInt("Seed", &seed, 1.0f);
                             ImGui::DragInt("Particles", &particles_count, 1.0f, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                             ImGui::DragFloat("Mean Reflectivity", &mean_reflectivity, 0.001f, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
+                            ImGui::Checkbox("Draw Light Paths", &draw_light_paths);
                             ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
                         }
                         if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
