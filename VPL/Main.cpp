@@ -1144,6 +1144,7 @@ static void Entry()
     int particles_count{ PARTICLES_COUNT_START };
     float mean_reflectivity{ MEAN_REFLECTIVITY_START };
     bool draw_light_paths{ true };
+    bool draw_lost_light_path_rays{};
     bool draw_light_path_hit_color{};
     int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
     bool invert_camera_mouse_x{};
@@ -1683,46 +1684,53 @@ static void Entry()
                         {
                             LightPathNode node{ light_path[j] };
 
-                            // if the current light path segment is valid, render it
+                            // if the current light path segment is a valid, render it
                             if (i < static_cast<int>(std::pow(mean_reflectivity, j) * particles_count))
                             {
-                                // upload object constants (line)
-                                {
-                                    SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                                    auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                                    constants->model = Matrix::Identity; // we pass line vertices in world space
-                                    constants->albedo = node.hit.valid ? LINE_OK_COLOR : LINE_ERROR_COLOR;
-                                }
+                                bool is_lost{ !node.hit.valid }; // has the light path segment been lost?
+                                // we should render a light path segment either if it is not lost or if we want to render lost rays
+                                bool should_be_rendered{ !is_lost || draw_lost_light_path_rays };
 
-                                // upload line vertices
+                                if (should_be_rendered)
                                 {
-                                    SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                                    auto vertices{ static_cast<Vertex*>(map.Data()) };
-                                    if (node.hit.valid)
+                                    // upload object constants (line)
                                     {
-                                        vertices[0] = { .position = { node.ray.origin } };
-                                        vertices[1] = { .position = { node.hit.position } };
+                                        SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                        auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                        constants->model = Matrix::Identity; // we pass line vertices in world space
+                                        constants->albedo = node.hit.valid ? LINE_OK_COLOR : LINE_ERROR_COLOR;
                                     }
-                                    else
+
+                                    // upload line vertices
                                     {
-                                        vertices[0] = { .position = { node.ray.origin } };
-                                        vertices[1] = { .position = { node.ray.origin + LINE_ERROR_T * node.ray.direction } };
+                                        SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                        auto vertices{ static_cast<Vertex*>(map.Data()) };
+                                        if (node.hit.valid)
+                                        {
+                                            vertices[0] = { .position = { node.ray.origin } };
+                                            vertices[1] = { .position = { node.hit.position } };
+                                        }
+                                        else
+                                        {
+                                            vertices[0] = { .position = { node.ray.origin } };
+                                            vertices[1] = { .position = { node.ray.origin + LINE_ERROR_T * node.ray.direction } };
+                                        }
                                     }
+
+                                    // set pipeline state
+                                    {
+                                        ID3D11Buffer* vbufs[]{ vb_line.Get() };
+                                        UINT strides[]{ sizeof(Vertex) };
+                                        UINT offsets[]{ 0 };
+
+                                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                                        d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
+                                        d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                                    }
+
+                                    // draw
+                                    d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                                 }
-
-                                // set pipeline state
-                                {
-                                    ID3D11Buffer* vbufs[]{ vb_line.Get() };
-                                    UINT strides[]{ sizeof(Vertex) };
-                                    UINT offsets[]{ 0 };
-
-                                    d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-                                    d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
-                                    d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
-                                }
-
-                                // draw
-                                d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                             }
                         }
                     }
@@ -1789,6 +1797,7 @@ static void Entry()
                             ImGui::DragInt("Particles", &particles_count, 1.0f, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                             ImGui::DragFloat("Mean Reflectivity", &mean_reflectivity, 0.001f, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                             ImGui::Checkbox("Draw Light Paths", &draw_light_paths);
+                            ImGui::Checkbox("Draw Lost Light Path Rays", &draw_lost_light_path_rays);
                             ImGui::Checkbox("Draw Light Path Hit Color", &draw_light_path_hit_color);
                             ImGui::DragInt("Light Path Index", &selected_light_path_index, 0.1f, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                             ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
