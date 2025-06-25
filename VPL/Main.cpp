@@ -1662,54 +1662,6 @@ static void Entry()
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
 
-                    // render light paths hits // TODO: to be moved to render Debug VPLs
-                    for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
-                    {
-                        // skip non selected light paths (when one is actually selected)
-                        if (selected_light_path_index >= 0 && i != selected_light_path_index) continue;
-
-                        const std::vector<LightPathNode>& light_path{ light_paths[i] };
-                        for (int j{}; j < static_cast<int>(light_path.size()); j++)
-                        {
-                            const LightPathNode& node{ light_path[j] };
-                            if (node.hit.valid)
-                            {
-                                float radius{ POINT_LIGHT_RADIUS / 2.0f };
-
-                                // upload object constants
-                                {
-                                    float diameter{ radius * 2.0f };
-
-                                    Matrix translate{ Matrix::CreateTranslation(node.hit.position) };
-                                    Matrix scale{ Matrix::CreateScale({diameter, diameter, diameter}) };
-                                    Matrix model{ scale * translate };
-
-                                    SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                                    auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                                    constants->model = model;
-                                }
-
-                                // upload light constants
-                                {
-                                    SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                                    auto constants{ static_cast<LightConstants*>(map.Data()) };
-                                    constants->world_position = node.hit.position;
-                                    constants->radius = radius;
-                                    constants->color = draw_light_path_hit_color ? node.hit_color : point_light.color;
-                                }
-
-                                // set pipeline state
-                                d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                                d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
-                                d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
-                                d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
-
-                                // draw
-                                d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
-                            }
-                        }
-                    }
-
                     // render light paths
                     for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
@@ -1768,50 +1720,6 @@ static void Entry()
                                     // draw
                                     d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                                 }
-                            }
-                        }
-                    }
-
-                    // render hits normals // TODO: to be moved to render Debug VPLs
-                    for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
-                    {
-                        // skip non selected light paths (when one is actually selected)
-                        if (selected_light_path_index >= 0 && i != selected_light_path_index) continue;
-
-                        const std::vector<LightPathNode>& light_path{ light_paths[i] };
-                        for (const LightPathNode& node : light_path)
-                        {
-                            if (node.hit.valid)
-                            {
-                                // upload object constants (line)
-                                {
-                                    SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                                    auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                                    constants->model = Matrix::Identity; // we pass line vertices in world space
-                                    constants->albedo = LINE_NORMAL_COLOR; // obnoxious pink 
-                                }
-
-                                // upload line vertices
-                                {
-                                    SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                                    auto vertices{ static_cast<Vertex*>(map.Data()) };
-                                    vertices[0] = { .position = { node.hit.position} };
-                                    vertices[1] = { .position = { node.hit.position + LINE_NORMAL_T * node.hit.normal} };
-                                }
-
-                                // set pipeline state
-                                {
-                                    ID3D11Buffer* vbufs[]{ vb_line.Get() };
-                                    UINT strides[]{ sizeof(Vertex) };
-                                    UINT offsets[]{ 0 };
-
-                                    d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-                                    d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
-                                    d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
-                                }
-
-                                // draw
-                                d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                             }
                         }
                     }
