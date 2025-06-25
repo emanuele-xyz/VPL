@@ -366,6 +366,7 @@ FodyWeavers.xsd
 VS.h
 PSFlat.h
 PSPLLit.h
+PSVPLLit.h
 PSPointLight.h
 
 # ImGui configuration file
