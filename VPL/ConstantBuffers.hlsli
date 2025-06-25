@@ -6,7 +6,7 @@ struct SceneConstants
     matrix view;
     matrix projection;
     float3 world_eye;
-    float _pad;
+    float _pad; // TODO: particles_count
 };
 
 struct ObjectConstants
@@ -22,7 +22,9 @@ struct LightConstants
     float3 world_position;
     float radius;
     float3 color;
-    float _pad;
+    float _pad; // TODO: is_hemisphere
+    // TODO: float3 normal
+    // TODO: float pad
 };
 
 #endif
