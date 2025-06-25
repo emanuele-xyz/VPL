@@ -1160,7 +1160,7 @@ static void Entry()
     // controls conficuration variables
     bool invert_camera_mouse_x{};
 
-    // uniform distribution between [0, 1)draw_vpls_color
+    // uniform distribution between [0, 1)
     std::uniform_real_distribution<float> dis{ 0.0f, 1.0f };
 
     // scene camera
