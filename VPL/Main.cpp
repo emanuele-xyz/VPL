@@ -1153,11 +1153,14 @@ static void Entry()
     float mean_reflectivity{ MEAN_REFLECTIVITY_START };
     bool draw_light_paths{ true };
     bool draw_lost_light_path_rays{};
-    bool draw_light_path_hit_color{};
+    bool draw_vpls{ true };
+    bool draw_vpls_color{};
     int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
+
+    // controls conficuration variables
     bool invert_camera_mouse_x{};
 
-    // uniform distribution between [0, 1)
+    // uniform distribution between [0, 1)draw_vpls_color
     std::uniform_real_distribution<float> dis{ 0.0f, 1.0f };
 
     // scene camera
@@ -1724,9 +1727,11 @@ static void Entry()
                         }
                     }
 
-                    // render VPLs // TODO: add flag for enabling/disabling VPL rendering
-                    for (const VPL& vpl : vpls)
+                    // render VPLs
+                    for (int i{}; i < static_cast<int>(vpls.size()) && draw_vpls; i++)
                     {
+                        const VPL& vpl{ vpls[i] };
+
                         float radius{ POINT_LIGHT_RADIUS / 2.0f };
 
                         // upload object constants
@@ -1748,7 +1753,7 @@ static void Entry()
                             auto constants{ static_cast<LightConstants*>(map.Data()) };
                             constants->world_position = vpl.position;
                             constants->radius = radius;
-                            constants->color = draw_light_path_hit_color ? vpl.color : point_light.color; // TODO: use draw_vpl_color instead
+                            constants->color = draw_vpls_color ? vpl.color : point_light.color;
                         }
 
                         // set pipeline state
@@ -1761,9 +1766,11 @@ static void Entry()
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
 
-                    // render VPLs normals // TODO: add flag for enabling/disabling VPL rendering
-                    for (const VPL& vpl : vpls)
+                    // render VPLs normals
+                    for (int i{}; i < static_cast<int>(vpls.size()) && draw_vpls; i++)
                     {
+                        const VPL& vpl{ vpls[i] };
+
                         // upload object constants (line)
                         {
                             SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
@@ -1814,8 +1821,12 @@ static void Entry()
                             ImGui::DragFloat("Mean Reflectivity", &mean_reflectivity, 0.001f, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                             ImGui::Checkbox("Draw Light Paths", &draw_light_paths);
                             ImGui::Checkbox("Draw Lost Light Path Rays", &draw_lost_light_path_rays);
-                            ImGui::Checkbox("Draw Light Path Hit Color", &draw_light_path_hit_color);
                             ImGui::DragInt("Light Path Index", &selected_light_path_index, 0.1f, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
+                            ImGui::Checkbox("Draw VPLs", &draw_vpls);
+                            ImGui::Checkbox("Draw VPLs Color", &draw_vpls_color);
+                        }
+                        if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
                             ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
                         }
                         if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
