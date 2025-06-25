@@ -1013,6 +1013,14 @@ struct LightPathNode
     Vector3 hit_color;
 };
 
+struct VPL
+{
+    Vector3 position;
+    Vector3 normal;
+    Vector3 color;
+    int bounce;
+};
+
 // ----------------------------------------------------------------------------
 // Application's Entry Point (may throw an exception)
 // ----------------------------------------------------------------------------
@@ -1166,6 +1174,9 @@ static void Entry()
     PointLight point_light{};
     point_light.position = { 0.0f, 3.25f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
+
+    // virtual point lights
+    std::vector<VPL> vpls{};
 
     // scene objects
     std::vector<Object> objects{};
@@ -1518,6 +1529,31 @@ static void Entry()
                             }
                         }
                     }
+
+                    // spawn VPLs
+                    {
+                        vpls.clear(); // forget about previous frame VPLs
+
+                        // spawn VPLs at light paths hits
+                        for (const std::vector<LightPathNode>& light_path : light_paths)
+                        {
+                            for (int j{}; j < static_cast<int>(light_path.size()); j++)
+                            {
+                                const LightPathNode& node{ light_path[j] };
+
+                                // if we hit something, we spawn a VPL
+                                if (node.hit.valid)
+                                {
+                                    VPL vpl{};
+                                    vpl.position = node.hit.position;
+                                    vpl.normal = node.hit.normal;
+                                    vpl.color = node.hit_color;
+                                    vpl.bounce = j;
+                                    vpls.emplace_back(vpl);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // render scene
@@ -1663,6 +1699,7 @@ static void Entry()
                                 }
 
                                 // set pipeline state
+                                d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                                 d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
                                 d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
                                 d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
@@ -1777,6 +1814,77 @@ static void Entry()
                                 d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                             }
                         }
+                    }
+
+                    // render VPLs // TODO: add flag for enabling/disabling VPL rendering
+                    for (const VPL& vpl : vpls)
+                    {
+                        float radius{ POINT_LIGHT_RADIUS / 2.0f };
+
+                        // upload object constants
+                        {
+                            float diameter{ radius * 2.0f };
+
+                            Matrix translate{ Matrix::CreateTranslation(vpl.position) };
+                            Matrix scale{ Matrix::CreateScale({diameter, diameter, diameter}) };
+                            Matrix model{ scale * translate };
+
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = model;
+                        }
+
+                        // upload light constants
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<LightConstants*>(map.Data()) };
+                            constants->world_position = vpl.position;
+                            constants->radius = radius;
+                            constants->color = draw_light_path_hit_color ? vpl.color : point_light.color; // TODO: use draw_vpl_color instead
+                        }
+
+                        // set pipeline state
+                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
+                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
+                        d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
+
+                        // draw
+                        d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
+                    }
+
+                    // render VPLs normals // TODO: add flag for enabling/disabling VPL rendering
+                    for (const VPL& vpl : vpls)
+                    {
+                        // upload object constants (line)
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                            constants->model = Matrix::Identity; // we pass line vertices in world space
+                            constants->albedo = LINE_NORMAL_COLOR; // obnoxious pink 
+                        }
+
+                        // upload line vertices
+                        {
+                            SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto vertices{ static_cast<Vertex*>(map.Data()) };
+                            vertices[0] = { .position = { vpl.position} };
+                            vertices[1] = { .position = { vpl.position + LINE_NORMAL_T * vpl.normal} };
+                        }
+
+                        // set pipeline state
+                        {
+                            ID3D11Buffer* vbufs[]{ vb_line.Get() };
+                            UINT strides[]{ sizeof(Vertex) };
+                            UINT offsets[]{ 0 };
+
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                            d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
+                            d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                        }
+
+                        // draw
+                        d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
                     }
                 }
 
