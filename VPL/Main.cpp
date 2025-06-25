@@ -1155,6 +1155,7 @@ static void Entry()
     bool draw_lost_light_path_rays{};
     bool draw_vpls{ true };
     bool draw_vpls_color{};
+    bool correct_vpls_color{};
     int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
 
     // controls conficuration variables
@@ -1300,7 +1301,7 @@ static void Entry()
             }
             else
             {
-                // validate configutation variables
+                // validate configuration variables
                 {
                     particles_count = std::clamp(particles_count, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                     mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
@@ -1753,7 +1754,32 @@ static void Entry()
                             auto constants{ static_cast<LightConstants*>(map.Data()) };
                             constants->world_position = vpl.position;
                             constants->radius = radius;
-                            constants->color = draw_vpls_color ? vpl.color : point_light.color;
+                            if (correct_vpls_color)
+                            {
+                                /*
+                                    Keller corrects each VPL color multiplying it by N / floor(w), where
+                                    - N is the number of particles/rays we shot from the light source
+                                    - w = mean_reflectivity^bounce * N
+                                    here bounce is the number of bounces the ray had to do before hitting the point in which the VPL was spawned
+                                    Keller spaws N VPLs on the surface of the light source and considers them to be at bounce 0.
+                                    Then, mean_reflectivity * N rays are cast.
+                                    Their hit points are at bounce 1, and so on ...
+                                    In our implementation, we did not spawn N VPLs on the light source.
+                                    Instead, we simply shot N rays from it.
+                                    These N rays will hit something.
+                                    These hits are considered to be at bounce zero.
+                                    Thus, for our implementation to adhere to Keller's, our correction needs to use as exponent bounce+1 instead of bounce.
+                                    TODO: is this right?
+                                */
+                                // TODO: here should we use as exponent bounce? or bounce+1?
+                                float correction{ static_cast<float>(particles_count / std::floor(std::pow(mean_reflectivity, vpl.bounce + 1) * particles_count)) };
+                                Vector3 corrected_vpl_color{ correction * vpl.color };
+                                constants->color = draw_vpls_color ? corrected_vpl_color : point_light.color;
+                            }
+                            else
+                            {
+                                constants->color = draw_vpls_color ? vpl.color : point_light.color;
+                            }
                         }
 
                         // set pipeline state
@@ -1824,6 +1850,7 @@ static void Entry()
                             ImGui::DragInt("Light Path Index", &selected_light_path_index, 0.1f, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                             ImGui::Checkbox("Draw VPLs", &draw_vpls);
                             ImGui::Checkbox("Draw VPLs Color", &draw_vpls_color);
+                            ImGui::Checkbox("Correct VPLs Color", &correct_vpls_color);
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {
