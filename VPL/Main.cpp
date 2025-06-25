@@ -1651,7 +1651,7 @@ static void Entry()
                     {
                         const VPL& vpl{ vpls[selected_vpl_index] }; // TODO: this may crash
 
-                        d3d_ctx->PSSetShader(ps_vpl_lit.Get(), nullptr, 0);
+                        d3d_ctx->PSSetShader(ps_vpl_lit.Get(), nullptr, 0); // TODO: start by using ps_pl_lit
 
                         // upload light constants
                         {
