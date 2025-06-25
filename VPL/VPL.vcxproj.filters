@@ -90,5 +90,6 @@
     <FxCompile Include="VS.hlsl" />
     <FxCompile Include="PSPointLight.hlsl" />
     <FxCompile Include="PSPLLit.hlsl" />
+    <FxCompile Include="PSVPLLit.hlsl" />
   </ItemGroup>
 </Project>

@@ -38,6 +38,7 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 #include "VS.h"
 #include "PSFlat.h"
 #include "PSPLLit.h"
+#include "PSVPLLit.h"
 #include "PSPointLight.h"
 
 // Constant buffers
@@ -1058,6 +1059,8 @@ static void Entry()
     CheckHR(d3d_dev->CreatePixelShader(PSFlat_bytes, sizeof(PSFlat_bytes), nullptr, ps_flat.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_pl_lit{};
     CheckHR(d3d_dev->CreatePixelShader(PSPLLit_bytes, sizeof(PSPLLit_bytes), nullptr, ps_pl_lit.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_vpl_lit{};
+    CheckHR(d3d_dev->CreatePixelShader(PSVPLLit_bytes, sizeof(PSVPLLit_bytes), nullptr, ps_vpl_lit.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_point_light{};
     CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
 
@@ -1303,14 +1306,6 @@ static void Entry()
             }
             else
             {
-                // validate configuration variables
-                {
-                    particles_count = std::clamp(particles_count, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
-                    mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
-                    selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
-                    selected_vpl_index = std::clamp(selected_vpl_index, MIN_SELECTED_VPL_INDEX, static_cast<int>(vpls.size()) - 1);
-                }
-
                 // update input state
                 {
                     // compute mouse delta
@@ -1421,6 +1416,14 @@ static void Entry()
 
                         obj.model = model;
                         obj.normal = normal;
+                    }
+
+                    // validate configuration variables
+                    {
+                        particles_count = std::clamp(particles_count, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
+                        mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
+                        selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
+                        selected_vpl_index = std::clamp(selected_vpl_index, MIN_SELECTED_VPL_INDEX, static_cast<int>(vpls.size()) - 1);
                     }
 
                     // start new light paths by shooting random rays from the point light
@@ -1602,7 +1605,8 @@ static void Entry()
                         constants->world_eye = camera.eye;
                     }
 
-                    // render objects
+                    // render scene objects
+                    if (selected_vpl_index == MIN_SELECTED_VPL_INDEX) // this index means that we want to render the main point light
                     {
                         d3d_ctx->PSSetShader(ps_pl_lit.Get(), nullptr, 0);
 
@@ -1612,6 +1616,59 @@ static void Entry()
                             auto constants{ static_cast<LightConstants*>(map.Data()) };
                             constants->world_position = point_light.position;
                             constants->color = point_light.color;
+                        }
+
+                        for (const Object& obj : objects)
+                        {
+                            // upload object constants
+                            {
+                                SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                constants->model = obj.model;
+                                constants->normal = obj.normal;
+                                constants->albedo = obj.albedo;
+                            }
+
+                            // set pipeline state
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                            d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
+                            d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
+
+                            // draw
+                            d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
+                        }
+                    }
+                    else // we render the scene using as light source the selected VPL
+                    {
+                        const VPL& vpl{ vpls[selected_vpl_index] }; // TODO: this may crash
+
+                        d3d_ctx->PSSetShader(ps_vpl_lit.Get(), nullptr, 0);
+
+                        // upload light constants
+                        {
+                            /*
+                                Keller corrects each VPL color multiplying it by N / floor(w), where
+                                - N is the number of particles/rays we shot from the light source
+                                - w = mean_reflectivity^bounce * N
+                                here bounce is the number of bounces the ray had to do before hitting the point in which the VPL was spawned
+                                Keller spaws N VPLs on the surface of the light source and considers them to be at bounce 0.
+                                Then, mean_reflectivity * N rays are cast.
+                                Their hit points are at bounce 1, and so on ...
+                                In our implementation, we did not spawn N VPLs on the light source.
+                                Instead, we simply shot N rays from it.
+                                These N rays will hit something.
+                                These hits are considered to be at bounce zero.
+                                Thus, for our implementation to adhere to Keller's, our correction needs to use as exponent bounce+1 instead of bounce.
+                                TODO: is this right?
+                            */
+                            // TODO: here should we use as exponent bounce? or bounce+1?
+                            float correction{ static_cast<float>(particles_count / std::floor(std::pow(mean_reflectivity, vpl.bounce + 1) * particles_count)) };
+
+                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                            auto constants{ static_cast<LightConstants*>(map.Data()) };
+                            constants->world_position = vpl.position;
+                            constants->color = correction * vpl.color; 
+                            constants->normal = vpl.normal;
                         }
 
                         for (const Object& obj : objects)

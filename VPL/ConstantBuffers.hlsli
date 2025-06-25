@@ -22,9 +22,9 @@ struct LightConstants
     float3 world_position;
     float radius;
     float3 color;
-    float _pad; // TODO: is_hemisphere
-    // TODO: float3 normal
-    // TODO: float pad
+    float _pad0;
+    float3 normal;
+    float _pad1;
 };
 
 #endif
