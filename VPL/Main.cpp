@@ -98,6 +98,7 @@ constexpr float MEAN_REFLECTIVITY_START{ 0.5f };
 constexpr float MEAN_REFLECTIVITY_MIN{ 0.1f };
 constexpr float MEAN_REFLECTIVITY_MAX{ 0.9f };
 constexpr int MIN_SELECTED_LIGHT_PATH_INDEX{ -1 };
+constexpr int MIN_SELECTED_VPL_INDEX{ -1 };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1153,10 +1154,11 @@ static void Entry()
     float mean_reflectivity{ MEAN_REFLECTIVITY_START };
     bool draw_light_paths{ true };
     bool draw_lost_light_path_rays{};
+    int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
     bool draw_vpls{ true };
     bool draw_vpls_color{};
     bool correct_vpls_color{};
-    int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
+    int selected_vpl_index{ MIN_SELECTED_VPL_INDEX };
 
     // controls conficuration variables
     bool invert_camera_mouse_x{};
@@ -1305,7 +1307,8 @@ static void Entry()
                 {
                     particles_count = std::clamp(particles_count, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                     mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
-                    selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()));
+                    selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
+                    selected_vpl_index = std::clamp(selected_vpl_index, MIN_SELECTED_VPL_INDEX, static_cast<int>(vpls.size()) - 1);
                 }
 
                 // update input state
@@ -1731,6 +1734,9 @@ static void Entry()
                     // render VPLs
                     for (int i{}; i < static_cast<int>(vpls.size()) && draw_vpls; i++)
                     {
+                        // skip non selected VPL (when one is actually selected)
+                        if (selected_vpl_index >= 0 && i != selected_vpl_index) continue;
+
                         const VPL& vpl{ vpls[i] };
 
                         float radius{ POINT_LIGHT_RADIUS / 2.0f };
@@ -1795,6 +1801,9 @@ static void Entry()
                     // render VPLs normals
                     for (int i{}; i < static_cast<int>(vpls.size()) && draw_vpls; i++)
                     {
+                        // skip non selected VPL (when one is actually selected)
+                        if (selected_vpl_index >= 0 && i != selected_vpl_index) continue;
+
                         const VPL& vpl{ vpls[i] };
 
                         // upload object constants (line)
@@ -1851,6 +1860,8 @@ static void Entry()
                             ImGui::Checkbox("Draw VPLs", &draw_vpls);
                             ImGui::Checkbox("Draw VPLs Color", &draw_vpls_color);
                             ImGui::Checkbox("Correct VPLs Color", &correct_vpls_color);
+                            ImGui::DragInt("VPL Index", &selected_vpl_index, 0.1f, MIN_SELECTED_VPL_INDEX, static_cast<int>(vpls.size()) - 1);
+
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {
