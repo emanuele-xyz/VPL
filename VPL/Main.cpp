@@ -101,6 +101,8 @@ constexpr float MEAN_REFLECTIVITY_MAX{ 0.9f };
 constexpr int MIN_SELECTED_LIGHT_PATH_INDEX{ -1 };
 constexpr int MIN_SELECTED_VPL_INDEX{ -1 };
 
+// TODO: define a POINT_LIGHT_INDEX as 0
+
 // ----------------------------------------------------------------------------
 // Custom Assertions
 // ----------------------------------------------------------------------------
@@ -1015,6 +1017,7 @@ struct LightPathNode
     Vector3 hit_color;
 };
 
+// TODO: implement a VirtualLight struct, instead of VPL. This struct will be used both for the main point light and for the various VPLs
 struct VPL
 {
     Vector3 position;
@@ -1022,6 +1025,8 @@ struct VPL
     Vector3 color;
     int bounce;
 };
+
+// TODO: implement function for correcting the light's color
 
 // ----------------------------------------------------------------------------
 // Application's Entry Point (may throw an exception)
@@ -1160,7 +1165,7 @@ static void Entry()
     int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
     bool draw_vpls{ true };
     bool draw_vpls_color{};
-    bool correct_vpls_color{};
+    bool correct_vpls_color{}; // TODO: always correct vpls color, don't need to add a flag
     int selected_vpl_index{ MIN_SELECTED_VPL_INDEX };
 
     // controls conficuration variables
@@ -1184,7 +1189,7 @@ static void Entry()
     point_light.position = { 0.0f, 3.25f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
 
-    // virtual point lights
+    // virtual point lights // TODO: rename to virtual_lights
     std::vector<VPL> vpls{};
 
     // scene objects
@@ -1544,6 +1549,8 @@ static void Entry()
                     {
                         vpls.clear(); // forget about previous frame VPLs
 
+                        // TODO: append to virtual_lights the point light
+
                         // spawn VPLs at light paths hits
                         for (const std::vector<LightPathNode>& light_path : light_paths)
                         {
@@ -1557,7 +1564,7 @@ static void Entry()
                                     VPL vpl{};
                                     vpl.position = node.hit.position;
                                     vpl.normal = node.hit.normal;
-                                    vpl.color = node.hit_color;
+                                    vpl.color = node.hit_color; // TODO: correct VPL color
                                     vpl.bounce = j;
                                     vpls.emplace_back(vpl);
                                 }
@@ -1605,6 +1612,8 @@ static void Entry()
                         constants->world_eye = camera.eye;
                     }
 
+                    // TODO: min index will signal to accumulate the various draw calls
+                    // TODO: an index > min index will signal to render the scene only once, using the indexed light source
                     // render scene objects
                     if (selected_vpl_index == MIN_SELECTED_VPL_INDEX) // this index means that we want to render the main point light
                     {
