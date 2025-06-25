@@ -1880,39 +1880,42 @@ static void Entry()
 
 int main()
 {
-    int renders{};
-
-    constexpr int N{ 10 };
-    constexpr float rho{ 0.25 }; // mean reflectivity
-    constexpr int M{ static_cast<int>((1.0 / (1 - rho)) * N) };
-
-    double w{}, start{};
-    int end{}, reflections{};
-
-    start = end = N;
-
-    while (end > 0)
+    // TODO: this should be removed
     {
-        start *= rho;
+        int renders{};
 
-        std::println("start: {} - end: {}", static_cast<int>(start), end);
-        for (int i{ static_cast<int>(start) }; i < end; i++)
+        constexpr int N{ 10 };
+        constexpr float rho{ 0.25 }; // mean reflectivity
+        constexpr int M{ static_cast<int>((1.0 / (1 - rho)) * N) };
+
+        double w{}, start{};
+        int end{}, reflections{};
+
+        start = end = N;
+
+        while (end > 0)
         {
-            w = N;
+            start *= rho;
 
-            for (int j{}; j <= reflections; j++)
+            std::println("start: {} - end: {}", static_cast<int>(start), end);
+            for (int i{ static_cast<int>(start) }; i < end; i++)
             {
-                std::println("render scene - particle={}, j={}, L={}/{}", i, j, N, std::floor(w));
-                w *= rho;
+                w = N;
 
-                renders++;
+                for (int j{}; j <= reflections; j++)
+                {
+                    std::println("render scene - particle={}, j={}, L={}/{}", i, j, N, std::floor(w));
+                    w *= rho;
+
+                    renders++;
+                }
             }
-        }
 
-        reflections++;
-        end = static_cast<int>(start);
+            reflections++;
+            end = static_cast<int>(start);
+        }
+        std::println("total renders: {} - M: {}", renders, M);
     }
-    std::println("total renders: {} - M: {}", renders, M);
 
     try
     {
