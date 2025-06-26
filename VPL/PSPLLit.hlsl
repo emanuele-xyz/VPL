@@ -11,5 +11,7 @@ float4 main(VSOutput input) : SV_TARGET
     
     float3 color = diffuse * cb_light.color * NdotL; // rendering equation
     
+    //color /= cb_scene.particles_count; // abiding by Keller, each frame is weighted by the number of particles // TODO: we should enable this
+    
     return float4(color, 1.0);
 }
