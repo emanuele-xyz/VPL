@@ -1042,21 +1042,21 @@ static Vector3 CompensateVPLColor(int particles_count, float mean_reflectivity, 
         Instead, we simply shot N rays from it.
         These N rays will hit something.
         These hits are considered to be at bounce zero.
-        Thus, for our implementation to adhere to Keller's, our correction needs to use as exponent bounce+1 instead of bounce.
+        Thus, for our implementation to adhere to Keller's, our compensation needs to use as exponent bounce+1 instead of bounce.
         TODO: is this right? I don't think so!
     */
     // TODO: here should we use as exponent bounce? or bounce+1?
     // TODO: if we use bounce+1 the denominator may become zero!
     float num{ static_cast<float> (particles_count) };
     float den{ static_cast<float>(std::floor(std::pow(mean_reflectivity, bounce) * particles_count)) };
-    Vector3 corrected_color{};
-    float correction{ num / den };
+    Vector3 compensated_color{};
+    float compensation{ num / den };
     Check(den != 0.0f);
     //if (den != 0.0f)
     {
-        corrected_color = correction * color;
+        compensated_color = compensation * color;
     }
-    return corrected_color;
+    return compensated_color;
 }
 
 // ----------------------------------------------------------------------------
