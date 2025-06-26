@@ -355,11 +355,16 @@ public:
     FrameBuffer& operator=(const FrameBuffer&) = delete;
     FrameBuffer& operator=(FrameBuffer&&) noexcept = default;
 public:
+    ID3D11Texture2D* BackBuffer() const noexcept { return m_back_buffer.Get(); }
     ID3D11RenderTargetView* BackBufferRTV() const noexcept { return m_back_buffer_rtv.Get(); }
+    ID3D11Texture2D* AuxBuffer() const noexcept { return m_aux_buffer.Get(); }
+    ID3D11RenderTargetView* AuxBufferRTV() const noexcept { return m_aux_buffer_rtv.Get(); }
     ID3D11DepthStencilView* DepthBufferDSV() const noexcept { return m_depth_buffer_dsv.Get(); }
 private:
     wrl::ComPtr<ID3D11Texture2D> m_back_buffer;
     wrl::ComPtr<ID3D11RenderTargetView> m_back_buffer_rtv;
+    wrl::ComPtr<ID3D11Texture2D> m_aux_buffer;
+    wrl::ComPtr<ID3D11RenderTargetView> m_aux_buffer_rtv;
     wrl::ComPtr<ID3D11Texture2D> m_depth_buffer;
     wrl::ComPtr<ID3D11DepthStencilView> m_depth_buffer_dsv;
 };
@@ -375,6 +380,15 @@ FrameBuffer::FrameBuffer(ID3D11Device* d3d_dev, IDXGISwapChain1* swap_chain)
     // get swap chain back buffer desc
     D3D11_TEXTURE2D_DESC buffer_desc{};
     m_back_buffer->GetDesc(&buffer_desc);
+
+    // adapt the buffer desc for the auxiliary buffer
+    buffer_desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+
+    // create auxiliary color buffer
+    CheckHR(d3d_dev->CreateTexture2D(&buffer_desc, nullptr, m_aux_buffer.ReleaseAndGetAddressOf()));
+
+    // create auxiliary color buffer rtv
+    CheckHR(d3d_dev->CreateRenderTargetView(m_aux_buffer.Get(), nullptr, m_aux_buffer_rtv.ReleaseAndGetAddressOf()));
 
     // adapt the buffer desc for the depth buffer
     buffer_desc.Format = DEPTH_BUFFER_FORMAT;
@@ -1095,8 +1109,6 @@ static void Entry()
     CheckHR(d3d_dev->CreatePixelShader(PSFlat_bytes, sizeof(PSFlat_bytes), nullptr, ps_flat.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_pl_lit{};
     CheckHR(d3d_dev->CreatePixelShader(PSPLLit_bytes, sizeof(PSPLLit_bytes), nullptr, ps_pl_lit.ReleaseAndGetAddressOf()));
-    wrl::ComPtr<ID3D11PixelShader> ps_vpl_lit{};
-    CheckHR(d3d_dev->CreatePixelShader(PSVPLLit_bytes, sizeof(PSVPLLit_bytes), nullptr, ps_vpl_lit.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_point_light{};
     CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
 
@@ -1608,15 +1620,8 @@ static void Entry()
                     }
                 }
 
-                // render scene
+                // prepare new frame
                 {
-                    ID3D11RenderTargetView* back_buffer_rtv{ frame_buffer.BackBufferRTV() };
-                    ID3D11DepthStencilView* back_buffer_dsv{ frame_buffer.DepthBufferDSV() };
-
-                    float clear_color[4]{ 0.2f, 0.3f, 0.3f, 1.0f };
-                    d3d_ctx->ClearRenderTargetView(back_buffer_rtv, clear_color);
-                    d3d_ctx->ClearDepthStencilView(back_buffer_dsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
-
                     // set viewport dimension
                     viewport.Width = static_cast<float>(window_w);
                     viewport.Height = static_cast<float>(window_h);
@@ -1632,7 +1637,6 @@ static void Entry()
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->RSSetState(rs_default.Get());
                         d3d_ctx->RSSetViewports(1, &viewport);
-                        d3d_ctx->OMSetRenderTargets(1, &back_buffer_rtv, back_buffer_dsv);
                     }
 
                     // upload scene constants
@@ -1645,20 +1649,38 @@ static void Entry()
                         constants->view = Matrix::CreateLookAt(camera.eye, camera.target, { 0.0f, 1.0f, 0.0f });
                         constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, camera.near_plane, camera.far_plane);
                         constants->world_eye = camera.eye;
-                        // TODO: constants->particles_count = particles_count;
+                        constants->particles_count = static_cast<float>(particles_count);
                     }
+                }
 
+                // render the scene for each virtual light, accumulating the result
+                {
                     /*
-                        Render the scene for each virtual light
                         A non negative selected light index means that the user wants to see the contribution of a single light source
                         A negative selected light index means that the user wants to see the final frame
                     */
                     for (int i{}; i < static_cast<int>(virtual_lights.size()); i++)
                     {
                         // skip non selected light (when one is actually selected)
-                        if (selected_light_index >= 0 && i != selected_light_index) continue;
+                        if (selected_light_index > MIN_SELECTED_LIGHT_INDEX && i != selected_light_index) continue;
 
                         const VirtualLight& light{ virtual_lights[i] };
+
+                        // clear color buffer and depth buffer
+                        {
+                            float clear_color[4]{ 0.2f, 0.3f, 0.3f, 1.0f };
+                            d3d_ctx->ClearRenderTargetView(frame_buffer.AuxBufferRTV(), clear_color);
+                            d3d_ctx->ClearDepthStencilView(frame_buffer.DepthBufferDSV(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+                        }
+
+                        // setup pipeline state
+                        {
+                            ID3D11RenderTargetView* rtv{ frame_buffer.AuxBufferRTV() };
+
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                            d3d_ctx->OMSetRenderTargets(1, &rtv, frame_buffer.DepthBufferDSV());
+                            d3d_ctx->PSSetShader(ps_pl_lit.Get(), nullptr, 0);
+                        }
 
                         // upload light constants
                         {
@@ -1683,14 +1705,29 @@ static void Entry()
                             }
 
                             // set pipeline state
-                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                             d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
                             d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
-                            d3d_ctx->PSSetShader(ps_pl_lit.Get(), nullptr, 0);
 
                             // draw
                             d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
                         }
+
+                        //if (i == 0 || selected_light_index > MIN_SELECTED_LIGHT_INDEX) // TODO: enable this
+                        {
+                            // it is the first frame we render, or we only want to render the contribution of a single virtual light
+                            // we just copy the rendered frame into the back buffer and we are done
+                            d3d_ctx->CopyResource(frame_buffer.BackBuffer(), frame_buffer.AuxBuffer());
+                        }
+                        //else // TODO: enable this
+                        {
+                            // we need to accumulate the currently rendered frame into the back buffer
+                        }
+                    }
+
+                    // from this point onwards we directly render to the back buffer
+                    {
+                        ID3D11RenderTargetView* rtv{ frame_buffer.BackBufferRTV() };
+                        d3d_ctx->OMSetRenderTargets(1, &rtv, frame_buffer.DepthBufferDSV());
                     }
 
                     // render main point light (only if we are rendering the final frame or we have selected the point light)
@@ -1735,7 +1772,12 @@ static void Entry()
                     for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
                         // skip non selected light paths (when one is actually selected)
-                        if (selected_light_path_index >= 0 && i != selected_light_path_index) continue;
+                        if (selected_light_path_index > MIN_SELECTED_LIGHT_PATH_INDEX && i != selected_light_path_index) continue;
+
+                        // setup pipeline state
+                        {
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                        }
 
                         const std::vector<LightPathNode>& light_path{ light_paths[i] };
                         for (int j{}; j < static_cast<int>(light_path.size()); j++)
@@ -1781,7 +1823,6 @@ static void Entry()
                                         UINT strides[]{ sizeof(Vertex) };
                                         UINT offsets[]{ 0 };
 
-                                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
                                         d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
                                         d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
                                     }
@@ -1794,84 +1835,98 @@ static void Entry()
                     }
 
                     // render VPLs
-                    for (int i{ POINT_LIGHT_INDEX + 1 }; i < static_cast<int>(virtual_lights.size()) && draw_vpls; i++)
                     {
-                        // skip non selected VPL (when one is actually selected)
-                        if (selected_light_index > POINT_LIGHT_INDEX && i != selected_light_index) continue;
-
-                        const VirtualLight& vpl{ virtual_lights[i] };
-
-                        float radius{ POINT_LIGHT_RADIUS / 2.0f }; // TODO: hardcoded
-
-                        // upload object constants
+                        // setup pipeline state
                         {
-                            float diameter{ radius * 2.0f };
-
-                            Matrix translate{ Matrix::CreateTranslation(vpl.position) };
-                            Matrix scale{ Matrix::CreateScale({diameter, diameter, diameter}) };
-                            Matrix model{ scale * translate };
-
-                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = model;
+                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                            d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
                         }
 
-                        // upload light constants
+                        for (int i{ POINT_LIGHT_INDEX + 1 }; i < static_cast<int>(virtual_lights.size()) && draw_vpls; i++)
                         {
-                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<LightConstants*>(map.Data()) };
-                            constants->world_position = vpl.position;
-                            constants->radius = radius;
-                            constants->color = vpl.color;
+                            // skip non selected VPL (when one is actually selected)
+                            if (selected_light_index > POINT_LIGHT_INDEX && i != selected_light_index) continue;
+
+                            const VirtualLight& vpl{ virtual_lights[i] };
+
+                            float radius{ POINT_LIGHT_RADIUS / 2.0f }; // TODO: hardcoded
+
+                            // upload object constants
+                            {
+                                float diameter{ radius * 2.0f };
+
+                                Matrix translate{ Matrix::CreateTranslation(vpl.position) };
+                                Matrix scale{ Matrix::CreateScale({diameter, diameter, diameter}) };
+                                Matrix model{ scale * translate };
+
+                                SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                constants->model = model;
+                            }
+
+                            // upload light constants
+                            {
+                                SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto constants{ static_cast<LightConstants*>(map.Data()) };
+                                constants->world_position = vpl.position;
+                                constants->radius = radius;
+                                constants->color = vpl.color;
+                            }
+
+                            // set pipeline state
+                            d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
+                            d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
+
+                            // draw
+                            d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                         }
-
-                        // set pipeline state
-                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0); // use cube mesh as light impostor
-                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset()); // use cube mesh as light impostor
-                        d3d_ctx->PSSetShader(ps_point_light.Get(), nullptr, 0);
-
-                        // draw
-                        d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
 
                     // render VPLs normals
-                    for (int i{ POINT_LIGHT_INDEX + 1 }; i < static_cast<int>(virtual_lights.size()) && draw_vpls; i++)
                     {
-                        // skip non selected VPL (when one is actually selected)
-                        if (selected_light_index > POINT_LIGHT_INDEX && i != selected_light_index) continue;
-
-                        const VirtualLight& vpl{ virtual_lights[i] };
-
-                        // upload object constants (line)
-                        {
-                            SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                            constants->model = Matrix::Identity; // we pass line vertices in world space
-                            constants->albedo = LINE_NORMAL_COLOR; // obnoxious pink 
-                        }
-
-                        // upload line vertices
-                        {
-                            SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto vertices{ static_cast<Vertex*>(map.Data()) };
-                            vertices[0] = { .position = { vpl.position} };
-                            vertices[1] = { .position = { vpl.position + LINE_NORMAL_T * vpl.normal} };
-                        }
-
                         // set pipeline state
                         {
-                            ID3D11Buffer* vbufs[]{ vb_line.Get() };
-                            UINT strides[]{ sizeof(Vertex) };
-                            UINT offsets[]{ 0 };
-
                             d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
-                            d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
                             d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
                         }
 
-                        // draw
-                        d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
+                        for (int i{ POINT_LIGHT_INDEX + 1 }; i < static_cast<int>(virtual_lights.size()) && draw_vpls; i++)
+                        {
+                            // skip non selected VPL (when one is actually selected)
+                            if (selected_light_index > POINT_LIGHT_INDEX && i != selected_light_index) continue;
+
+                            const VirtualLight& vpl{ virtual_lights[i] };
+
+                            // upload object constants (line)
+                            {
+                                SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                constants->model = Matrix::Identity; // we pass line vertices in world space
+                                constants->albedo = LINE_NORMAL_COLOR; // obnoxious pink 
+                            }
+
+                            // upload line vertices
+                            {
+                                SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto vertices{ static_cast<Vertex*>(map.Data()) };
+                                vertices[0] = { .position = { vpl.position} };
+                                vertices[1] = { .position = { vpl.position + LINE_NORMAL_T * vpl.normal} };
+                            }
+
+                            // set pipeline state
+                            {
+                                ID3D11Buffer* vbufs[]{ vb_line.Get() };
+                                UINT strides[]{ sizeof(Vertex) };
+                                UINT offsets[]{ 0 };
+
+                                d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_LINELIST);
+                                d3d_ctx->IASetVertexBuffers(0, std::size(vbufs), vbufs, strides, offsets);
+                                d3d_ctx->PSSetShader(ps_flat.Get(), nullptr, 0);
+                            }
+
+                            // draw
+                            d3d_ctx->Draw(LINE_VERTEX_COUNT, 0);
+                        }
                     }
                 }
 

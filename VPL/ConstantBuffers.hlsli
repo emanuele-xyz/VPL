@@ -6,7 +6,7 @@ struct SceneConstants
     matrix view;
     matrix projection;
     float3 world_eye;
-    float _pad; // TODO: particles_count
+    float particles_count;
 };
 
 struct ObjectConstants
