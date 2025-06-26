@@ -99,9 +99,8 @@ constexpr float MEAN_REFLECTIVITY_START{ 0.5f };
 constexpr float MEAN_REFLECTIVITY_MIN{ 0.1f };
 constexpr float MEAN_REFLECTIVITY_MAX{ 0.9f };
 constexpr int MIN_SELECTED_LIGHT_PATH_INDEX{ -1 };
-constexpr int MIN_SELECTED_VPL_INDEX{ -1 };
-
-// TODO: define a POINT_LIGHT_INDEX as 0
+constexpr int MIN_SELECTED_LIGHT_INDEX{ -1 };
+constexpr int POINT_LIGHT_INDEX{};
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1017,8 +1016,10 @@ struct LightPathNode
     Vector3 hit_color;
 };
 
-// TODO: implement a VirtualLight struct, instead of VPL. This struct will be used both for the main point light and for the various VPLs
-struct VPL
+/*
+    Either a point light or a VPL
+*/
+struct VirtualLight
 {
     Vector3 position;
     Vector3 normal;
@@ -1026,7 +1027,37 @@ struct VPL
     int bounce;
 };
 
-// TODO: implement function for correcting the light's color
+static Vector3 CompensateVPLColor(int particles_count, float mean_reflectivity, int bounce, Vector3 color)
+{
+    // TODO: revise this
+    /*
+        Keller corrects each VPL color multiplying it by N / floor(w), where
+        - N is the number of particles/rays we shot from the light source
+        - w = mean_reflectivity^bounce * N
+        here bounce is the number of bounces the ray had to do before hitting the point in which the VPL was spawned
+        Keller spaws N VPLs on the surface of the light source and considers them to be at bounce 0.
+        Then, mean_reflectivity * N rays are cast.
+        Their hit points are at bounce 1, and so on ...
+        In our implementation, we did not spawn N VPLs on the light source.
+        Instead, we simply shot N rays from it.
+        These N rays will hit something.
+        These hits are considered to be at bounce zero.
+        Thus, for our implementation to adhere to Keller's, our correction needs to use as exponent bounce+1 instead of bounce.
+        TODO: is this right? I don't think so!
+    */
+    // TODO: here should we use as exponent bounce? or bounce+1?
+    // TODO: if we use bounce+1 the denominator may become zero!
+    float num{ static_cast<float> (particles_count) };
+    float den{ static_cast<float>(std::floor(std::pow(mean_reflectivity, bounce) * particles_count)) };
+    Vector3 corrected_color{};
+    float correction{ num / den };
+    Check(den != 0.0f);
+    //if (den != 0.0f)
+    {
+        corrected_color = correction * color;
+    }
+    return corrected_color;
+}
 
 // ----------------------------------------------------------------------------
 // Application's Entry Point (may throw an exception)
@@ -1164,9 +1195,7 @@ static void Entry()
     bool draw_lost_light_path_rays{};
     int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
     bool draw_vpls{ true };
-    bool draw_vpls_color{};
-    bool correct_vpls_color{}; // TODO: always correct vpls color, don't need to add a flag
-    int selected_vpl_index{ MIN_SELECTED_VPL_INDEX };
+    int selected_light_index{ MIN_SELECTED_LIGHT_INDEX };
 
     // controls conficuration variables
     bool invert_camera_mouse_x{};
@@ -1188,9 +1217,6 @@ static void Entry()
     PointLight point_light{};
     point_light.position = { 0.0f, 3.25f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
-
-    // virtual point lights // TODO: rename to virtual_lights
-    std::vector<VPL> vpls{};
 
     // scene objects
     std::vector<Object> objects{};
@@ -1267,6 +1293,9 @@ static void Entry()
 
     // light paths
     std::vector<std::vector<LightPathNode>> light_paths{};
+
+    // virtual lights (main point light + VPLs)
+    std::vector<VirtualLight> virtual_lights{};
 
     // validate scene objects: no two objects can have the same name
     {
@@ -1428,7 +1457,7 @@ static void Entry()
                         particles_count = std::clamp(particles_count, PARTICLES_COUNT_MIN, PARTICLES_COUNT_MAX);
                         mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                         selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
-                        selected_vpl_index = std::clamp(selected_vpl_index, MIN_SELECTED_VPL_INDEX, static_cast<int>(vpls.size()) - 1);
+                        selected_light_index = std::clamp(selected_light_index, MIN_SELECTED_LIGHT_INDEX, static_cast<int>(virtual_lights.size()) - 1);
                     }
 
                     // start new light paths by shooting random rays from the point light
@@ -1523,7 +1552,7 @@ static void Entry()
                                     Ray reflected_ray{ closest.position, reflection };
 
                                     // compute hit albedo attenuating the ray's color by the object's albedo divided by PI
-                                    Vector3 hit_color{ (light_path.back().ray_color * closest_obj->albedo) / std::numbers::pi_v<float> };
+                                    Vector3 hit_color{ light_path.back().ray_color * (closest_obj->albedo / std::numbers::pi_v<float>) };
 
                                     // record current ray hit into the light path
                                     light_path.back().hit = closest;
@@ -1547,9 +1576,15 @@ static void Entry()
 
                     // spawn VPLs
                     {
-                        vpls.clear(); // forget about previous frame VPLs
+                        virtual_lights.clear(); // forget about previous frame virtual lights
 
-                        // TODO: append to virtual_lights the point light
+                        // the main point light is treated as a virtual light (and must have index POINT_LIGHT_INDEX)
+                        {
+                            VirtualLight light{};
+                            light.position = point_light.position;
+                            light.color = point_light.color;
+                            virtual_lights.emplace_back(light);
+                        }
 
                         // spawn VPLs at light paths hits
                         for (const std::vector<LightPathNode>& light_path : light_paths)
@@ -1561,12 +1596,12 @@ static void Entry()
                                 // if we hit something, we spawn a VPL
                                 if (node.hit.valid)
                                 {
-                                    VPL vpl{};
+                                    VirtualLight vpl{};
                                     vpl.position = node.hit.position;
                                     vpl.normal = node.hit.normal;
-                                    vpl.color = node.hit_color; // TODO: correct VPL color
+                                    vpl.color = CompensateVPLColor(particles_count, mean_reflectivity, j, node.hit_color);
                                     vpl.bounce = j;
-                                    vpls.emplace_back(vpl);
+                                    virtual_lights.emplace_back(vpl);
                                 }
                             }
                         }
@@ -1610,23 +1645,32 @@ static void Entry()
                         constants->view = Matrix::CreateLookAt(camera.eye, camera.target, { 0.0f, 1.0f, 0.0f });
                         constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, camera.near_plane, camera.far_plane);
                         constants->world_eye = camera.eye;
+                        // TODO: constants->particles_count = particles_count;
                     }
 
-                    // TODO: min index will signal to accumulate the various draw calls
-                    // TODO: an index > min index will signal to render the scene only once, using the indexed light source
-                    // render scene objects
-                    if (selected_vpl_index == MIN_SELECTED_VPL_INDEX) // this index means that we want to render the main point light
+                    /*
+                        Render the scene for each virtual light
+                        A non negative selected light index means that the user wants to see the contribution of a single light source
+                        A negative selected light index means that the user wants to see the final frame
+                    */
+                    for (int i{}; i < static_cast<int>(virtual_lights.size()); i++)
                     {
-                        d3d_ctx->PSSetShader(ps_pl_lit.Get(), nullptr, 0);
+                        // skip non selected light (when one is actually selected)
+                        if (selected_light_index >= 0 && i != selected_light_index) continue;
+
+                        const VirtualLight& light{ virtual_lights[i] };
 
                         // upload light constants
                         {
                             SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                             auto constants{ static_cast<LightConstants*>(map.Data()) };
-                            constants->world_position = point_light.position;
-                            constants->color = point_light.color;
+                            constants->world_position = light.position;
+                            constants->color = light.color;
+                            constants->normal = light.normal;
+                            // TODO: constants->light_type = i == POINT_LIGHT_INDEX ? LIGHT_TYPE_POINT_LIGHT : ...;
                         }
 
+                        // render each object
                         for (const Object& obj : objects)
                         {
                             // upload object constants
@@ -1642,66 +1686,15 @@ static void Entry()
                             d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                             d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
                             d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
-
-                            // draw
-                            d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
-                        }
-                    }
-                    else // we render the scene using as light source the selected VPL
-                    {
-                        const VPL& vpl{ vpls[selected_vpl_index] }; // TODO: this may crash
-
-                        d3d_ctx->PSSetShader(ps_vpl_lit.Get(), nullptr, 0); // TODO: start by using ps_pl_lit
-
-                        // upload light constants
-                        {
-                            /*
-                                Keller corrects each VPL color multiplying it by N / floor(w), where
-                                - N is the number of particles/rays we shot from the light source
-                                - w = mean_reflectivity^bounce * N
-                                here bounce is the number of bounces the ray had to do before hitting the point in which the VPL was spawned
-                                Keller spaws N VPLs on the surface of the light source and considers them to be at bounce 0.
-                                Then, mean_reflectivity * N rays are cast.
-                                Their hit points are at bounce 1, and so on ...
-                                In our implementation, we did not spawn N VPLs on the light source.
-                                Instead, we simply shot N rays from it.
-                                These N rays will hit something.
-                                These hits are considered to be at bounce zero.
-                                Thus, for our implementation to adhere to Keller's, our correction needs to use as exponent bounce+1 instead of bounce.
-                                TODO: is this right?
-                            */
-                            // TODO: here should we use as exponent bounce? or bounce+1?
-                            float correction{ static_cast<float>(particles_count / std::floor(std::pow(mean_reflectivity, vpl.bounce + 1) * particles_count)) };
-
-                            SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                            auto constants{ static_cast<LightConstants*>(map.Data()) };
-                            constants->world_position = vpl.position;
-                            constants->color = correction * vpl.color; 
-                            constants->normal = vpl.normal;
-                        }
-
-                        for (const Object& obj : objects)
-                        {
-                            // upload object constants
-                            {
-                                SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
-                                auto constants{ static_cast<ObjectConstants*>(map.Data()) };
-                                constants->model = obj.model;
-                                constants->normal = obj.normal;
-                                constants->albedo = obj.albedo;
-                            }
-
-                            // set pipeline state
-                            d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-                            d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
-                            d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
+                            d3d_ctx->PSSetShader(ps_pl_lit.Get(), nullptr, 0);
 
                             // draw
                             d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
                         }
                     }
 
-                    // render point light
+                    // render main point light (only if we are rendering the final frame or we have selected the point light)
+                    if (selected_light_index == MIN_SELECTED_LIGHT_INDEX || selected_light_index == POINT_LIGHT_INDEX)
                     {
                         // upload object constants (light impostor cube)
                         {
@@ -1734,7 +1727,10 @@ static void Entry()
                         // draw
                         d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
                     }
+                }
 
+                // render debug visualizations
+                {
                     // render light paths
                     for (int i{}; i < static_cast<int>(light_paths.size()) && draw_light_paths; i++)
                     {
@@ -1798,14 +1794,14 @@ static void Entry()
                     }
 
                     // render VPLs
-                    for (int i{}; i < static_cast<int>(vpls.size()) && draw_vpls; i++)
+                    for (int i{ POINT_LIGHT_INDEX + 1 }; i < static_cast<int>(virtual_lights.size()) && draw_vpls; i++)
                     {
                         // skip non selected VPL (when one is actually selected)
-                        if (selected_vpl_index >= 0 && i != selected_vpl_index) continue;
+                        if (selected_light_index > POINT_LIGHT_INDEX && i != selected_light_index) continue;
 
-                        const VPL& vpl{ vpls[i] };
+                        const VirtualLight& vpl{ virtual_lights[i] };
 
-                        float radius{ POINT_LIGHT_RADIUS / 2.0f };
+                        float radius{ POINT_LIGHT_RADIUS / 2.0f }; // TODO: hardcoded
 
                         // upload object constants
                         {
@@ -1826,32 +1822,7 @@ static void Entry()
                             auto constants{ static_cast<LightConstants*>(map.Data()) };
                             constants->world_position = vpl.position;
                             constants->radius = radius;
-                            if (correct_vpls_color)
-                            {
-                                /*
-                                    Keller corrects each VPL color multiplying it by N / floor(w), where
-                                    - N is the number of particles/rays we shot from the light source
-                                    - w = mean_reflectivity^bounce * N
-                                    here bounce is the number of bounces the ray had to do before hitting the point in which the VPL was spawned
-                                    Keller spaws N VPLs on the surface of the light source and considers them to be at bounce 0.
-                                    Then, mean_reflectivity * N rays are cast.
-                                    Their hit points are at bounce 1, and so on ...
-                                    In our implementation, we did not spawn N VPLs on the light source.
-                                    Instead, we simply shot N rays from it.
-                                    These N rays will hit something.
-                                    These hits are considered to be at bounce zero.
-                                    Thus, for our implementation to adhere to Keller's, our correction needs to use as exponent bounce+1 instead of bounce.
-                                    TODO: is this right?
-                                */
-                                // TODO: here should we use as exponent bounce? or bounce+1?
-                                float correction{ static_cast<float>(particles_count / std::floor(std::pow(mean_reflectivity, vpl.bounce + 1) * particles_count)) };
-                                Vector3 corrected_vpl_color{ correction * vpl.color };
-                                constants->color = draw_vpls_color ? corrected_vpl_color : point_light.color;
-                            }
-                            else
-                            {
-                                constants->color = draw_vpls_color ? vpl.color : point_light.color;
-                            }
+                            constants->color = vpl.color;
                         }
 
                         // set pipeline state
@@ -1865,12 +1836,12 @@ static void Entry()
                     }
 
                     // render VPLs normals
-                    for (int i{}; i < static_cast<int>(vpls.size()) && draw_vpls; i++)
+                    for (int i{ POINT_LIGHT_INDEX + 1 }; i < static_cast<int>(virtual_lights.size()) && draw_vpls; i++)
                     {
                         // skip non selected VPL (when one is actually selected)
-                        if (selected_vpl_index >= 0 && i != selected_vpl_index) continue;
+                        if (selected_light_index > POINT_LIGHT_INDEX && i != selected_light_index) continue;
 
-                        const VPL& vpl{ vpls[i] };
+                        const VirtualLight& vpl{ virtual_lights[i] };
 
                         // upload object constants (line)
                         {
@@ -1924,10 +1895,7 @@ static void Entry()
                             ImGui::Checkbox("Draw Lost Light Path Rays", &draw_lost_light_path_rays);
                             ImGui::DragInt("Light Path Index", &selected_light_path_index, 0.1f, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                             ImGui::Checkbox("Draw VPLs", &draw_vpls);
-                            ImGui::Checkbox("Draw VPLs Color", &draw_vpls_color);
-                            ImGui::Checkbox("Correct VPLs Color", &correct_vpls_color);
-                            ImGui::DragInt("VPL Index", &selected_vpl_index, 0.1f, MIN_SELECTED_VPL_INDEX, static_cast<int>(vpls.size()) - 1);
-
+                            ImGui::DragInt("Light Index", &selected_light_index, 0.1f, MIN_SELECTED_LIGHT_INDEX, static_cast<int>(virtual_lights.size()) - 1);
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {
