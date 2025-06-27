@@ -1229,6 +1229,7 @@ static void Entry()
 
     // controls conficuration variables
     bool invert_camera_mouse_x{};
+    bool invert_camera_mouse_y{};
 
     // uniform distribution between [0, 1)
     std::uniform_real_distribution<float> dis{ 0.0f, 1.0f };
@@ -1417,7 +1418,7 @@ static void Entry()
                         if (s_mouse.right)
                         {
                             camera.yaw_deg += (invert_camera_mouse_x ? -1.0f : +1.0f) * s_mouse.dx * frame_dt_sec * MOUSE_SENSITIVITY;
-                            camera.pitch_deg -= s_mouse.dy * frame_dt_sec * MOUSE_SENSITIVITY;
+                            camera.pitch_deg -= (invert_camera_mouse_y ? -1.0f : +1.0f) * s_mouse.dy * frame_dt_sec * MOUSE_SENSITIVITY;
                             camera.pitch_deg = std::clamp(camera.pitch_deg, CAMERA_MIN_PITCH_DEG, CAMERA_MAX_PITCH_DEG);
                         }
 
@@ -1955,6 +1956,7 @@ static void Entry()
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {
                             ImGui::Checkbox("Invert Camera Mouse X", &invert_camera_mouse_x);
+                            ImGui::Checkbox("Invert Camera Mouse Y", &invert_camera_mouse_y);
                         }
                         if (ImGui::CollapsingHeader("Point Light", ImGuiTreeNodeFlags_DefaultOpen))
                         {
