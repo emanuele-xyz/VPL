@@ -1321,6 +1321,16 @@ static void Entry()
         obj.albedo = { 1.0f, 1.0f, 1.0f };
         obj.ray_intersect_fn = RayQuadIntersect;
     }
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Front Wall";
+        obj.position = { 0.0f, 2.0f, 2.0f };
+        obj.rotation = { 0.0f, 180.0f, 0.0f };
+        obj.scaling = { 4.0f, 4.0f, 1.0f };
+        obj.mesh = &quad_mesh;
+        obj.albedo = { 1.0f, 1.0f, 1.0f };
+        obj.ray_intersect_fn = RayQuadIntersect;
+    }
 
     // light paths
     std::vector<std::vector<LightPathNode>> light_paths{};
