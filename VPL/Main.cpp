@@ -37,8 +37,7 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 // Shaders bytecode
 #include "VS.h"
 #include "PSFlat.h"
-#include "PSPLLit.h"
-#include "PSVPLLit.h"
+#include "PSLit.h"
 #include "PSPointLight.h"
 
 // Constant buffers
@@ -46,11 +45,13 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 #define float3 Vector3
 #define float4 Vector4
 #define matrix Matrix
+#define int int32_t
 #include "ConstantBuffers.hlsli"
 #undef float2
 #undef float3
 #undef float4
 #undef matrix
+#undef int
 
 // ----------------------------------------------------------------------------
 // Libraries
@@ -1097,8 +1098,8 @@ static void Entry()
     CheckHR(d3d_dev->CreateVertexShader(VS_bytes, sizeof(VS_bytes), nullptr, vs.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_flat{};
     CheckHR(d3d_dev->CreatePixelShader(PSFlat_bytes, sizeof(PSFlat_bytes), nullptr, ps_flat.ReleaseAndGetAddressOf()));
-    wrl::ComPtr<ID3D11PixelShader> ps_pl_lit{};
-    CheckHR(d3d_dev->CreatePixelShader(PSPLLit_bytes, sizeof(PSPLLit_bytes), nullptr, ps_pl_lit.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_lit{};
+    CheckHR(d3d_dev->CreatePixelShader(PSLit_bytes, sizeof(PSLit_bytes), nullptr, ps_lit.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_point_light{};
     CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
 
@@ -1230,6 +1231,7 @@ static void Entry()
     int selected_light_path_index{ MIN_SELECTED_LIGHT_PATH_INDEX };
     bool draw_vpls{ true };
     int selected_light_index{ MIN_SELECTED_LIGHT_INDEX };
+    int selected_vpl_type{ LIGHT_TYPE_POINT };
 
     // controls conficuration variables
     bool invert_camera_mouse_x{};
@@ -1718,7 +1720,7 @@ static void Entry()
                             constants->color = light.color;
                             constants->normal = light.normal;
                             constants->intensity = point_light.intenisty;
-                            // TODO: constants->light_type = i == POINT_LIGHT_INDEX ? LIGHT_TYPE_POINT_LIGHT : ...;
+                            constants->type = i == POINT_LIGHT_INDEX ? LIGHT_TYPE_POINT : selected_vpl_type;
                         }
 
                         // it is the first frame we render, or we only want to render the contribution of a single virtual light
@@ -1750,7 +1752,7 @@ static void Entry()
                             // set pipeline state
                             d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
                             d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
-                            d3d_ctx->PSSetShader(ps_pl_lit.Get(), nullptr, 0);
+                            d3d_ctx->PSSetShader(ps_lit.Get(), nullptr, 0);
 
                             // draw
                             d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
@@ -1787,6 +1789,7 @@ static void Entry()
                             constants->radius = POINT_LIGHT_RADIUS;
                             constants->color = point_light.color;
                             constants->intensity = point_light.intenisty;
+                            constants->type = LIGHT_TYPE_POINT;
                         }
 
                         // set pipeline state
@@ -1806,7 +1809,7 @@ static void Entry()
                         for (int i{ POINT_LIGHT_INDEX + 1 }; i < static_cast<int>(virtual_lights.size()) && draw_vpls; i++)
                         {
                             // skip non selected VPL (when one is actually selected)
-                            if (selected_light_index > POINT_LIGHT_INDEX && i != selected_light_index) continue;
+                            if (selected_light_index > MIN_SELECTED_LIGHT_INDEX && i != selected_light_index) continue;
 
                             const VirtualLight& vpl{ virtual_lights[i] };
 
@@ -1833,6 +1836,7 @@ static void Entry()
                                 constants->radius = radius;
                                 constants->color = vpl.color;
                                 constants->intensity = point_light.intenisty;
+                                constants->type = i == POINT_LIGHT_INDEX ? LIGHT_TYPE_POINT : selected_vpl_type;
                             }
 
                             // set pipeline state
@@ -1970,6 +1974,11 @@ static void Entry()
                             ImGui::DragInt("Light Path Index", &selected_light_path_index, 0.1f, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                             ImGui::Checkbox("Draw VPLs", &draw_vpls);
                             ImGui::DragInt("Light Index", &selected_light_index, 0.1f, MIN_SELECTED_LIGHT_INDEX, static_cast<int>(virtual_lights.size()) - 1);
+                            // VPL type editor
+                            {
+                                const char* vpl_type_descs[]{ "Point", "Sign Cosine Weighted", "Cosine Weighted" };
+                                ImGui::Combo("VPL Type", &selected_vpl_type, vpl_type_descs, std::size(vpl_type_descs));
+                            }
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {

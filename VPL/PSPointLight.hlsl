@@ -10,7 +10,7 @@ PSOut main(VSOutput input)
 {
     PSOut output;
     output.depth = 1.0;
-    output.color = float4(cb_light.color, 1.0);
+    output.color = cb_light.intensity * float4(cb_light.color, 1.0);
     
     float3 ro = cb_scene.world_eye; // ray origin
     float3 rd = normalize(input.world_position - cb_scene.world_eye); // ray direction

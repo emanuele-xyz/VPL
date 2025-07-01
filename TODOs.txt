@@ -1,4 +1,1 @@
 - eliminare VPL che sono nere o troppo scure threshold
-- compensare va bene perché schiarisce leggermente la scena
-- intensità della luce importa?
-- read https://realtimeillumination.wordpress.com/tag/c/

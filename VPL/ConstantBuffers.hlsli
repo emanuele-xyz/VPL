@@ -1,6 +1,10 @@
 #ifndef __CONSTANT_BUFFERS__
 #define __CONSTANT_BUFFERS__
 
+#define LIGHT_TYPE_POINT 0
+#define LIGHT_TYPE_SIGN_COS_WEIGHTED 1
+#define LIGHT_TYPE_COS_WEIGHTED 2
+
 struct SceneConstants
 {
     matrix view;
@@ -24,7 +28,7 @@ struct LightConstants
     float3 color;
     float intensity;
     float3 normal;
-    float _pad1; // TODO: int light_type (POINT, COS_WEIGHTED, SIGN_COS_WEIGHTED). Remember to #define int to be int32_t in main. If you do this, also unify Lit shaders
+    int type;
 };
 
 #endif
