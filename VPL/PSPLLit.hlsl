@@ -9,7 +9,9 @@ float4 main(VSOutput input) : SV_TARGET
     float3 L = normalize(cb_light.world_position - input.world_position);
     float NdotL = max(dot(N, L), 0);
     
-    float3 color = diffuse * cb_light.color * NdotL; // rendering equation
+    float3 light = cb_light.intensity * cb_light.color;
+    
+    float3 color = diffuse * light * NdotL; // rendering equation
     
     color /= cb_scene.particles_count; // abiding by Keller, each frame is weighted by the number of particles // TODO: we should enable this
     

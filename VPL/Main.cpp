@@ -86,6 +86,9 @@ constexpr float CAMERA_MOVE_SPEED{ 10.0f };
 constexpr float CAMERA_MOVE_SPEED_MULTIPLIER{ 2.0f };
 constexpr float MOUSE_SENSITIVITY{ 5.0f };
 constexpr float POINT_LIGHT_RADIUS{ 0.25f };
+constexpr float POINT_LIGHT_MIN_INTENSITY{ 1.0f };
+constexpr float POINT_LIGHT_MAX_INTENSITY{ 100.0f };
+constexpr float POINT_LIGHT_START_INTENSITY{ 5.0f };
 constexpr UINT LINE_VERTEX_COUNT{ 2 };
 constexpr Vector3 LINE_OK_COLOR{ 0.0f, 1.0f, 0.0f };
 constexpr Vector3 LINE_ERROR_COLOR{ 1.0f, 0.0f, 0.0f };
@@ -1002,6 +1005,7 @@ struct PointLight
 {
     Vector3 position;
     Vector3 color;
+    float intenisty;
 };
 
 // ----------------------------------------------------------------------------
@@ -1248,6 +1252,7 @@ static void Entry()
     PointLight point_light{};
     point_light.position = { 0.0f, 3.25f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
+    point_light.intenisty = POINT_LIGHT_START_INTENSITY;
 
     // scene objects
     std::vector<Object> objects{};
@@ -1712,6 +1717,7 @@ static void Entry()
                             constants->world_position = light.position;
                             constants->color = light.color;
                             constants->normal = light.normal;
+                            constants->intensity = point_light.intenisty;
                             // TODO: constants->light_type = i == POINT_LIGHT_INDEX ? LIGHT_TYPE_POINT_LIGHT : ...;
                         }
 
@@ -1780,6 +1786,7 @@ static void Entry()
                             constants->world_position = point_light.position;
                             constants->radius = POINT_LIGHT_RADIUS;
                             constants->color = point_light.color;
+                            constants->intensity = point_light.intenisty;
                         }
 
                         // set pipeline state
@@ -1825,6 +1832,7 @@ static void Entry()
                                 constants->world_position = vpl.position;
                                 constants->radius = radius;
                                 constants->color = vpl.color;
+                                constants->intensity = point_light.intenisty;
                             }
 
                             // set pipeline state
@@ -1976,6 +1984,8 @@ static void Entry()
                                 ImGui::DragFloat3("Position", position, 0.01f);
                                 point_light.position = { position[0], position[1], position[2] };
                             }
+                            // intensity editor
+                            ImGui::DragFloat("Intensity", &point_light.intenisty, 0.1f, POINT_LIGHT_MIN_INTENSITY, POINT_LIGHT_MAX_INTENSITY);
                             // color editor
                             {
                                 float color[3]{ point_light.color.x, point_light.color.y, point_light.color.z };
