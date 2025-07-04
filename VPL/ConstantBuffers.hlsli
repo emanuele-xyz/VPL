@@ -11,6 +11,8 @@ struct SceneConstants
     matrix projection;
     float3 world_eye;
     float particles_count;
+    float far_plane;
+    float _pad[3];
 };
 
 struct ObjectConstants

@@ -39,6 +39,7 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 #include "PSFlat.h"
 #include "PSLit.h"
 #include "PSPointLight.h"
+#include "PSCubeShadowMap.h"
 
 // Constant buffers
 #define float2 Vector2
@@ -105,6 +106,8 @@ constexpr float MEAN_REFLECTIVITY_MAX{ 0.9f };
 constexpr int MIN_SELECTED_LIGHT_PATH_INDEX{ -1 };
 constexpr int MIN_SELECTED_LIGHT_INDEX{ -1 };
 constexpr int POINT_LIGHT_INDEX{};
+constexpr int CUBE_MAP_FACES{ 6 };
+constexpr int CUBE_SHADOW_MAP_SIZE{ 1024 };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -397,6 +400,65 @@ FrameBuffer::FrameBuffer()
     , m_depth_buffer{}
     , m_depth_buffer_dsv{}
 {
+}
+
+class CubeShadowMap
+{
+public:
+    CubeShadowMap(ID3D11Device* d3d_dev);
+    ~CubeShadowMap() = default;
+    CubeShadowMap(const CubeShadowMap&) = delete;
+    CubeShadowMap(CubeShadowMap&&) noexcept = delete;
+    CubeShadowMap& operator=(const CubeShadowMap&) = delete;
+    CubeShadowMap& operator=(CubeShadowMap&&) noexcept = delete;
+public:
+    ID3D11DepthStencilView* DSVs(int face_idx) const noexcept { return m_dsvs[face_idx].Get(); }
+    ID3D11ShaderResourceView* SRV() const noexcept { return m_srv.Get(); }
+private:
+    wrl::ComPtr<ID3D11Texture2D> m_cube_map;
+    wrl::ComPtr<ID3D11DepthStencilView> m_dsvs[CUBE_MAP_FACES];
+    wrl::ComPtr<ID3D11ShaderResourceView> m_srv;
+};
+
+CubeShadowMap::CubeShadowMap(ID3D11Device* d3d_dev)
+    : m_cube_map{}
+{
+    // create cube map texture
+    {
+        D3D11_TEXTURE2D_DESC desc{};
+        desc.Width = static_cast<UINT>(CUBE_SHADOW_MAP_SIZE);
+        desc.Height = static_cast<UINT>(CUBE_SHADOW_MAP_SIZE);
+        desc.MipLevels = 1;
+        desc.ArraySize = static_cast<UINT>(CUBE_MAP_FACES);
+        desc.Format = DXGI_FORMAT_R32_TYPELESS;
+        desc.SampleDesc = { .Count = 1, .Quality = 0 };
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
+        desc.MiscFlags = D3D11_RESOURCE_MISC_TEXTURECUBE;
+        CheckHR(d3d_dev->CreateTexture2D(&desc, nullptr, m_cube_map.ReleaseAndGetAddressOf()));
+    }
+
+    // create DSVs
+    for (int face_idx{}; face_idx < CUBE_MAP_FACES; face_idx++)
+    {
+        D3D11_DEPTH_STENCIL_VIEW_DESC desc{};
+        desc.Format = DXGI_FORMAT_D32_FLOAT;
+        desc.ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2DARRAY;
+        desc.Texture2DArray.MipSlice = 0;
+        desc.Texture2DArray.FirstArraySlice = face_idx;
+        desc.Texture2DArray.ArraySize = 1;
+        CheckHR(d3d_dev->CreateDepthStencilView(m_cube_map.Get(), &desc, m_dsvs[face_idx].ReleaseAndGetAddressOf()));
+    }
+
+    // create SRV
+    {
+        D3D11_SHADER_RESOURCE_VIEW_DESC desc{};
+        desc.Format = DXGI_FORMAT_R32_FLOAT;
+        desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
+        desc.TextureCube.MostDetailedMip = 0;
+        desc.TextureCube.MipLevels = 1;
+        CheckHR(d3d_dev->CreateShaderResourceView(m_cube_map.Get(), &desc, m_srv.ReleaseAndGetAddressOf()));
+    }
 }
 
 class Mesh
@@ -1086,6 +1148,9 @@ static void Entry()
     // frame buffer
     FrameBuffer frame_buffer{ d3d_dev.Get(), swap_chain.Get() };
 
+    // cube shadow map
+    CubeShadowMap cube_shadow_map{ d3d_dev.Get() };
+
     // viewprot
     D3D11_VIEWPORT viewport{};
     viewport.TopLeftX = 0.0f;
@@ -1102,6 +1167,8 @@ static void Entry()
     CheckHR(d3d_dev->CreatePixelShader(PSLit_bytes, sizeof(PSLit_bytes), nullptr, ps_lit.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_point_light{};
     CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_cube_shadow_map{};
+    CheckHR(d3d_dev->CreatePixelShader(PSCubeShadowMap_bytes, sizeof(PSCubeShadowMap_bytes), nullptr, ps_cube_shadow_map.ReleaseAndGetAddressOf()));
 
     // input layout
     wrl::ComPtr<ID3D11InputLayout> input_layout{};
@@ -1656,7 +1723,135 @@ static void Entry()
                     }
                 }
 
-                // prepare new frame
+                // prepare cube shaodw map render
+                {
+                    // set viewport dimension
+                    viewport.Width = static_cast<float>(CUBE_SHADOW_MAP_SIZE);
+                    viewport.Height = static_cast<float>(CUBE_SHADOW_MAP_SIZE);
+
+                    // prepare pipeline for drawing
+                    {
+                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get() };
+
+                        d3d_ctx->ClearState();
+                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        d3d_ctx->IASetInputLayout(input_layout.Get());
+                        d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
+                        d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
+                        d3d_ctx->PSSetShader(ps_cube_shadow_map.Get(), nullptr, 0);
+                        d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
+                        d3d_ctx->RSSetState(rs_default.Get()); // TODO: slpe scaled bias
+                        d3d_ctx->RSSetViewports(1, &viewport);
+                    }
+                }
+
+                // disable no RTV bound warning
+                #if defined(_DEBUG)
+                {
+                    wrl::ComPtr<ID3D11InfoQueue> queue{};
+                    CheckHR(d3d_dev->QueryInterface(queue.ReleaseAndGetAddressOf()));
+
+                    D3D11_MESSAGE_ID deny_msgs[]{ D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET };
+                    D3D11_INFO_QUEUE_FILTER filter{};
+                    filter.DenyList.NumIDs = std::size(deny_msgs);
+                    filter.DenyList.pIDList = deny_msgs;
+
+                    CheckHR(queue->PushStorageFilter(&filter));
+                }
+                #endif
+
+                // render cube shadow map
+                {
+                    // directions to use for computing the view matrix of each side of the shadow cube map
+                    Vector3 view_directions[6]
+                    {
+                        { +1.0f, +0.0f, +0.0f }, // +X
+                        { -1.0f, +0.0f, +0.0f }, // -X
+                        { +1.0f, +1.0f, +0.0f }, // +Y
+                        { +1.0f, -1.0f, +0.0f }, // -Y
+                        { +1.0f, +0.0f, +1.0f }, // +Z
+                        { +1.0f, +0.0f, -1.0f }, // -Z
+                    };
+
+                    // up vectors to use for computing the view matrix of each side of the shadow cube map
+                    Vector3 view_ups[6]
+                    {
+                        { +0.0f, +1.0f, +0.0f }, // +X
+                        { -0.0f, +1.0f, +0.0f }, // -X
+                        { +0.0f, +0.0f, -1.0f }, // +Y
+                        { +0.0f, -0.0f, +1.0f }, // -Y
+                        { +0.0f, +1.0f, +0.0f }, // +Z
+                        { +0.0f, +1.0f, +0.0f }, // -Z
+                    };
+
+                    // upload light constants
+                    {
+                        SubresourceMap map{ d3d_ctx.Get(), cb_light.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                        auto constants{ static_cast<LightConstants*>(map.Data()) };
+                        constants->world_position = point_light.position;
+                    }
+
+                    // for each side of the cube
+                    for (int face_idx{}; face_idx < CUBE_MAP_FACES; face_idx++)
+                    {
+                        // render the scene
+                        {
+                            // clear color buffer and depth buffer
+                            {
+                                d3d_ctx->ClearDepthStencilView(cube_shadow_map.DSVs(face_idx), D3D11_CLEAR_DEPTH, 1.0f, 0);
+                            }
+
+                            // set cube shadow map side as depth buffer
+                            d3d_ctx->OMSetRenderTargets(0, nullptr, cube_shadow_map.DSVs(face_idx));
+
+                            // upload scene constants
+                            {
+                                float fov_rad{ static_cast<float>(std::numbers::pi) / 2.0f };
+                                float aspect{ viewport.Width / viewport.Height };
+                                float near_plane{ 0.1f }; // TODO: hardcoded
+                                float far_plane{ 100.0f }; // TODO: hardcoded
+
+                                SubresourceMap map{ d3d_ctx.Get(), cb_scene.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto constants{ static_cast<SceneConstants*>(map.Data()) };
+                                constants->view = Matrix::CreateLookAt(point_light.position, point_light.position + view_directions[face_idx], view_ups[face_idx]);
+                                constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, near_plane, far_plane);
+                                constants->far_plane = far_plane;
+                            }
+
+                            // render each object
+                            for (const Object& obj : objects)
+                            {
+                                // upload object constants
+                                {
+                                    SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                    auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                                    constants->model = obj.model;
+                                    constants->normal = obj.normal;
+                                    constants->albedo = obj.albedo;
+                                }
+
+                                // set pipeline state
+                                d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
+                                d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
+                                d3d_ctx->PSSetShader(ps_lit.Get(), nullptr, 0);
+
+                                // draw
+                                d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
+                            }
+                        }
+                    }
+                }
+
+                // reset D3D11 info queue
+                #if defined(_DEBUG)
+                {
+                    wrl::ComPtr<ID3D11InfoQueue> queue{};
+                    CheckHR(d3d_dev->QueryInterface(queue.ReleaseAndGetAddressOf()));
+                    queue->PopStorageFilter();
+                }
+                #endif
+
+                // prepare final render
                 {
                     // clear color buffer and depth buffer
                     {
