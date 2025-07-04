@@ -40,6 +40,7 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 #include "PSLit.h"
 #include "PSPointLight.h"
 #include "PSCubeShadowMap.h"
+#include "PSSkybox.h"
 
 // Constant buffers
 #define float2 Vector2
@@ -1169,6 +1170,8 @@ static void Entry()
     CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_cube_shadow_map{};
     CheckHR(d3d_dev->CreatePixelShader(PSCubeShadowMap_bytes, sizeof(PSCubeShadowMap_bytes), nullptr, ps_cube_shadow_map.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_skybox{};
+    CheckHR(d3d_dev->CreatePixelShader(PSSkybox_bytes, sizeof(PSSkybox_bytes), nullptr, ps_skybox.ReleaseAndGetAddressOf()));
 
     // input layout
     wrl::ComPtr<ID3D11InputLayout> input_layout{};
@@ -1196,6 +1199,23 @@ static void Entry()
         desc.MultisampleEnable = false;
         desc.AntialiasedLineEnable = false;
         CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_default.ReleaseAndGetAddressOf()));
+    }
+
+    // no backface culling rasterizer state
+    wrl::ComPtr<ID3D11RasterizerState> rs_no_cull{};
+    {
+        D3D11_RASTERIZER_DESC desc{};
+        desc.FillMode = D3D11_FILL_SOLID;
+        desc.CullMode = D3D11_CULL_NONE;
+        desc.FrontCounterClockwise = true;
+        desc.DepthBias = 0;
+        desc.DepthBiasClamp = 0.0f;
+        desc.SlopeScaledDepthBias = 0.0f;
+        desc.DepthClipEnable = true;
+        desc.ScissorEnable = false;
+        desc.MultisampleEnable = false;
+        desc.AntialiasedLineEnable = false;
+        CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_no_cull.ReleaseAndGetAddressOf()));
     }
 
     // blend state for summing
@@ -1228,6 +1248,15 @@ static void Entry()
         //desc.FrontFace = ;
         //desc.BackFace = ;
         CheckHR(d3d_dev->CreateDepthStencilState(&desc, ds_equal.ReleaseAndGetAddressOf()));
+    }
+
+    // depth stencil state for no depth testing
+    wrl::ComPtr<ID3D11DepthStencilState> ds_no_depth{};
+    {
+        D3D11_DEPTH_STENCIL_DESC desc{};
+        desc.DepthEnable = false;
+        desc.StencilEnable = false;
+        CheckHR(d3d_dev->CreateDepthStencilState(&desc, ds_no_depth.ReleaseAndGetAddressOf()));
     }
 
     // scene constant buffer
@@ -1282,6 +1311,20 @@ static void Entry()
         CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, vb_line.ReleaseAndGetAddressOf()));
     }
 
+    // skybox sampler
+    wrl::ComPtr<ID3D11SamplerState> ss_skybox{};
+    {
+        D3D11_SAMPLER_DESC desc{};
+        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.BorderColor[0] = 1.0f;
+        desc.MinLOD = 0.0f;
+        desc.MaxLOD = D3D11_FLOAT32_MAX;
+        CheckHR(d3d_dev->CreateSamplerState(&desc, ss_skybox.ReleaseAndGetAddressOf()));
+    }
+
     // meshes
     Mesh quad_mesh{ Mesh::Quad(d3d_dev.Get()) };
     Mesh cube_mesh{ Mesh::Cube(d3d_dev.Get()) };
@@ -1299,6 +1342,7 @@ static void Entry()
     bool draw_vpls{ true };
     int selected_light_index{ MIN_SELECTED_LIGHT_INDEX };
     int selected_vpl_type{ LIGHT_TYPE_POINT };
+    bool draw_cube_shadow_map{};
 
     // controls conficuration variables
     bool invert_camera_mouse_x{};
@@ -1809,7 +1853,7 @@ static void Entry()
                                 float fov_rad{ static_cast<float>(std::numbers::pi) / 2.0f };
                                 float aspect{ viewport.Width / viewport.Height };
                                 float near_plane{ 0.1f }; // TODO: hardcoded
-                                float far_plane{ 100.0f }; // TODO: hardcoded
+                                float far_plane{ 10.0f}; // TODO: hardcoded
 
                                 SubresourceMap map{ d3d_ctx.Get(), cb_scene.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                                 auto constants{ static_cast<SceneConstants*>(map.Data()) };
@@ -1868,6 +1912,8 @@ static void Entry()
                     {
                         ID3D11RenderTargetView* rtv{ frame_buffer.BackBufferRTV() };
                         ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get() };
+                        ID3D11ShaderResourceView* srvs[]{ cube_shadow_map.SRV() };
+                        ID3D11SamplerState* sss[]{ ss_skybox.Get() };
 
                         d3d_ctx->ClearState();
                         d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1875,6 +1921,8 @@ static void Entry()
                         d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
+                        d3d_ctx->PSSetShaderResources(0, std::size(srvs), srvs);
+                        d3d_ctx->PSSetSamplers(0, std::size(sss), sss);
                         d3d_ctx->RSSetState(rs_default.Get());
                         d3d_ctx->RSSetViewports(1, &viewport);
                         d3d_ctx->OMSetRenderTargets(1, &rtv, frame_buffer.DepthBufferDSV());
@@ -1893,7 +1941,7 @@ static void Entry()
                         constants->particles_count = selected_light_index > MIN_SELECTED_LIGHT_INDEX ? 1.0f : static_cast<float>(particles_count);
                     }
                 }
-
+                
                 // render the scene for each virtual light, accumulating the result
                 {
                     /*
@@ -2148,6 +2196,45 @@ static void Entry()
                     }
                 }
 
+                // render cube shadow map as a skybox
+                if (draw_cube_shadow_map)
+                {
+                    // prepare pipeline for drawing
+                    {
+                        ID3D11RenderTargetView* rtv{ frame_buffer.BackBufferRTV() };
+
+                        d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                        d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0);
+                        d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset());
+                        d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
+                        d3d_ctx->RSSetState(rs_no_cull.Get());
+                        d3d_ctx->PSSetShader(ps_skybox.Get(), nullptr, 0);
+                        d3d_ctx->OMSetDepthStencilState(ds_no_depth.Get(), 0);
+                        d3d_ctx->OMSetRenderTargets(1, &rtv, nullptr);
+                    }
+
+                    // upload scene constants
+                    {
+                        float aspect{ viewport.Width / viewport.Height };
+                        float fov_rad{ DirectX::XMConvertToRadians(camera.fov_deg) };
+
+                        SubresourceMap map{ d3d_ctx.Get(), cb_scene.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                        auto constants{ static_cast<SceneConstants*>(map.Data()) };
+                        constants->view = Matrix::CreateLookAt({ 0.0f, 0.0f, 0.0f }, camera.target - camera.eye, { 0.0f, 1.0f, 0.0f }); // we don't want translations
+                        constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, camera.near_plane, camera.far_plane);
+                    }
+
+                    // upload object constants
+                    {
+                        SubresourceMap map{ d3d_ctx.Get(), cb_object.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                        auto constants{ static_cast<ObjectConstants*>(map.Data()) };
+                        constants->model = Matrix::Identity;
+                    }
+
+                    // draw
+                    d3d_ctx->DrawIndexed(cube_mesh.IndexCount(), 0, 0);
+                }
+
                 // render ui
                 StartNewImGuiFrame();
                 {
@@ -2174,6 +2261,7 @@ static void Entry()
                                 const char* vpl_type_descs[]{ "Point", "Sign Cosine Weighted", "Cosine Weighted" };
                                 ImGui::Combo("VPL Type", &selected_vpl_type, vpl_type_descs, std::size(vpl_type_descs));
                             }
+                            ImGui::Checkbox("Draw Shadow Map", &draw_cube_shadow_map);
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {

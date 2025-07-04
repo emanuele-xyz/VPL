@@ -91,5 +91,6 @@
     <FxCompile Include="PSPointLight.hlsl" />
     <FxCompile Include="PSLit.hlsl" />
     <FxCompile Include="PSCubeShadowMap.hlsl" />
+    <FxCompile Include="PSSkybox.hlsl" />
   </ItemGroup>
 </Project>

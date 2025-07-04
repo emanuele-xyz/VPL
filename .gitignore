@@ -368,6 +368,7 @@ PSFlat.h
 PSLit.h
 PSPointLight.h
 PSCubeShadowMap.h
+PSSkybox.h
 
 # ImGui configuration file
 imgui.ini

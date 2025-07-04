@@ -33,4 +33,7 @@ cbuffer CBLight : register(b2)
     LightConstants cb_light;
 };
 
+TextureCube skybox : register(t0);
+SamplerState skybox_sampler : register(s0);
+
 #endif
