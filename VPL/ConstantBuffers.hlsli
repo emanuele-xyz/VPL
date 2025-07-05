@@ -11,8 +11,8 @@ struct SceneConstants
     matrix projection;
     float3 world_eye;
     float particles_count;
-    float far_plane;
-    float _pad[3];
+    float far_plane; // TODO: this should go in MainLightConstants
+    float _pad[3]; // TODO: remove padding
 };
 
 struct ObjectConstants
@@ -23,7 +23,17 @@ struct ObjectConstants
     float _pad;
 };
 
-struct LightConstants
+/*
+struct MainLightConstants
+{
+    float3 world_position;
+    float intensity;
+    float3 color;
+    float far_plane;
+};
+*/
+
+struct LightConstants // TODO: this should be renamed VirtualLightConstants
 {
     float3 world_position;
     float radius;

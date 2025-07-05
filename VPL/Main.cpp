@@ -1311,6 +1311,21 @@ static void Entry()
         CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, vb_line.ReleaseAndGetAddressOf()));
     }
 
+    // cube shadow map sampler
+    wrl::ComPtr<ID3D11SamplerState> ss_cube_shadow_map{};
+    {
+        D3D11_SAMPLER_DESC desc{};
+        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+        //desc.ComparisonFunc = ;
+        desc.BorderColor[0] = 1.0f;
+        desc.MinLOD = 0.0f;
+        desc.MaxLOD = D3D11_FLOAT32_MAX;
+        CheckHR(d3d_dev->CreateSamplerState(&desc, ss_cube_shadow_map.ReleaseAndGetAddressOf()));
+    }
+
     // skybox sampler
     wrl::ComPtr<ID3D11SamplerState> ss_skybox{};
     {
@@ -1363,12 +1378,28 @@ static void Entry()
 
     // scene point light
     PointLight point_light{};
+    point_light.position = { 0.0f, 2.0f, 0.0f };
+    point_light.color = { 1.0f, 1.0f, 1.0f };
+    point_light.intenisty = POINT_LIGHT_START_INTENSITY;
+    #if 0
     point_light.position = { 0.0f, 3.25f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
     point_light.intenisty = POINT_LIGHT_START_INTENSITY;
+    #endif
 
     // scene objects
     std::vector<Object> objects{};
+    {
+        Object& obj{ objects.emplace_back() };
+        obj.name = "Cube";
+        obj.position = { 0.0f, 3.0f, 0.0f };
+        obj.rotation = { 0.0f, 0.0f, 0.0f };
+        obj.scaling = { .5f, .5f, .5f };
+        obj.mesh = &cube_mesh;
+        obj.albedo = { 1.0f, 1.0f, 1.0f };
+        obj.ray_intersect_fn = RayBoxIntersect;
+    }
+    #if 0
     {
         Object& obj{ objects.emplace_back() };
         obj.name = "Left Cube";
@@ -1389,6 +1420,7 @@ static void Entry()
         obj.albedo = { 1.0f, 1.0f, 1.0f };
         obj.ray_intersect_fn = RayBoxIntersect;
     }
+    #endif
     {
         Object& obj{ objects.emplace_back() };
         obj.name = "Floor";
@@ -1784,7 +1816,7 @@ static void Entry()
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->PSSetShader(ps_cube_shadow_map.Get(), nullptr, 0);
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
-                        d3d_ctx->RSSetState(rs_default.Get()); // TODO: slpe scaled bias
+                        d3d_ctx->RSSetState(rs_default.Get()); // TODO: slope scaled bias
                         d3d_ctx->RSSetViewports(1, &viewport);
                     }
                 }
@@ -1795,7 +1827,11 @@ static void Entry()
                     wrl::ComPtr<ID3D11InfoQueue> queue{};
                     CheckHR(d3d_dev->QueryInterface(queue.ReleaseAndGetAddressOf()));
 
-                    D3D11_MESSAGE_ID deny_msgs[]{ D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET };
+                    D3D11_MESSAGE_ID deny_msgs[]{
+                        D3D11_MESSAGE_ID_DEVICE_DRAW_RENDERTARGETVIEW_NOT_SET,
+                        D3D11_MESSAGE_ID_DEVICE_DRAW_SAMPLER_NOT_SET,
+                        D3D11_MESSAGE_ID_DEVICE_DRAW_SHADERRESOURCEVIEW_NOT_SET,
+                    };
                     D3D11_INFO_QUEUE_FILTER filter{};
                     filter.DenyList.NumIDs = std::size(deny_msgs);
                     filter.DenyList.pIDList = deny_msgs;
@@ -1811,19 +1847,19 @@ static void Entry()
                     {
                         { +1.0f, +0.0f, +0.0f }, // +X
                         { -1.0f, +0.0f, +0.0f }, // -X
-                        { +1.0f, +1.0f, +0.0f }, // +Y
-                        { +1.0f, -1.0f, +0.0f }, // -Y
-                        { +1.0f, +0.0f, +1.0f }, // +Z
-                        { +1.0f, +0.0f, -1.0f }, // -Z
+                        { +0.0f, +1.0f, +0.0f }, // +Y
+                        { +0.0f, -1.0f, +0.0f }, // -Y
+                        { +0.0f, +0.0f, +1.0f }, // +Z
+                        { +0.0f, +0.0f, -1.0f }, // -Z
                     };
 
                     // up vectors to use for computing the view matrix of each side of the shadow cube map
                     Vector3 view_ups[6]
                     {
                         { +0.0f, +1.0f, +0.0f }, // +X
-                        { -0.0f, +1.0f, +0.0f }, // -X
+                        { +0.0f, +1.0f, +0.0f }, // -X
                         { +0.0f, +0.0f, -1.0f }, // +Y
-                        { +0.0f, -0.0f, +1.0f }, // -Y
+                        { +0.0f, +0.0f, +1.0f }, // -Y
                         { +0.0f, +1.0f, +0.0f }, // +Z
                         { +0.0f, +1.0f, +0.0f }, // -Z
                     };
@@ -1841,9 +1877,7 @@ static void Entry()
                         // render the scene
                         {
                             // clear color buffer and depth buffer
-                            {
-                                d3d_ctx->ClearDepthStencilView(cube_shadow_map.DSVs(face_idx), D3D11_CLEAR_DEPTH, 1.0f, 0);
-                            }
+                            d3d_ctx->ClearDepthStencilView(cube_shadow_map.DSVs(face_idx), D3D11_CLEAR_DEPTH, 1.0f, 0);
 
                             // set cube shadow map side as depth buffer
                             d3d_ctx->OMSetRenderTargets(0, nullptr, cube_shadow_map.DSVs(face_idx));
@@ -1851,14 +1885,18 @@ static void Entry()
                             // upload scene constants
                             {
                                 float fov_rad{ static_cast<float>(std::numbers::pi) / 2.0f };
-                                float aspect{ viewport.Width / viewport.Height };
+                                float aspect{ 1.0f };
                                 float near_plane{ 0.1f }; // TODO: hardcoded
-                                float far_plane{ 10.0f}; // TODO: hardcoded
+                                float far_plane{ 10.0f }; // TODO: hardcoded
 
                                 SubresourceMap map{ d3d_ctx.Get(), cb_scene.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                                 auto constants{ static_cast<SceneConstants*>(map.Data()) };
-                                constants->view = Matrix::CreateLookAt(point_light.position, point_light.position + view_directions[face_idx], view_ups[face_idx]);
-                                constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, near_plane, far_plane);
+                                // TODO: to be removed
+                                //constants->view = Matrix::CreateLookAt(point_light.position, point_light.position + view_directions[face_idx], view_ups[face_idx]);
+                                constants->view = DirectX::XMMatrixLookAtLH(point_light.position, point_light.position + view_directions[face_idx], view_ups[face_idx]);
+                                // TODO: to be removed
+                                //constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, near_plane, far_plane);
+                                constants->projection = DirectX::XMMatrixPerspectiveFovLH(fov_rad, aspect, near_plane, far_plane);
                                 constants->far_plane = far_plane;
                             }
 
@@ -1877,7 +1915,6 @@ static void Entry()
                                 // set pipeline state
                                 d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
                                 d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
-                                d3d_ctx->PSSetShader(ps_lit.Get(), nullptr, 0);
 
                                 // draw
                                 d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);
@@ -1913,7 +1950,7 @@ static void Entry()
                         ID3D11RenderTargetView* rtv{ frame_buffer.BackBufferRTV() };
                         ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get() };
                         ID3D11ShaderResourceView* srvs[]{ cube_shadow_map.SRV() };
-                        ID3D11SamplerState* sss[]{ ss_skybox.Get() };
+                        ID3D11SamplerState* sss[]{ ss_cube_shadow_map.Get(), ss_skybox.Get() };
 
                         d3d_ctx->ClearState();
                         d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1941,7 +1978,7 @@ static void Entry()
                         constants->particles_count = selected_light_index > MIN_SELECTED_LIGHT_INDEX ? 1.0f : static_cast<float>(particles_count);
                     }
                 }
-                
+
                 // render the scene for each virtual light, accumulating the result
                 {
                     /*
