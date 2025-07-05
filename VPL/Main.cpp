@@ -109,6 +109,8 @@ constexpr int MIN_SELECTED_LIGHT_INDEX{ -1 };
 constexpr int POINT_LIGHT_INDEX{};
 constexpr int CUBE_MAP_FACES{ 6 };
 constexpr int CUBE_SHADOW_MAP_SIZE{ 1024 };
+constexpr float CUBE_SHADOW_MAP_NEAR{ 0.1f };
+constexpr float CUBE_SHADOW_MAP_FAR{ 10.0f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1378,28 +1380,12 @@ static void Entry()
 
     // scene point light
     PointLight point_light{};
-    point_light.position = { 0.0f, 2.0f, 0.0f };
-    point_light.color = { 1.0f, 1.0f, 1.0f };
-    point_light.intenisty = POINT_LIGHT_START_INTENSITY;
-    #if 0
     point_light.position = { 0.0f, 3.25f, 1.0f };
     point_light.color = { 1.0f, 1.0f, 1.0f };
     point_light.intenisty = POINT_LIGHT_START_INTENSITY;
-    #endif
 
     // scene objects
     std::vector<Object> objects{};
-    {
-        Object& obj{ objects.emplace_back() };
-        obj.name = "Cube";
-        obj.position = { 0.0f, 3.0f, 0.0f };
-        obj.rotation = { 0.0f, 0.0f, 0.0f };
-        obj.scaling = { .5f, .5f, .5f };
-        obj.mesh = &cube_mesh;
-        obj.albedo = { 1.0f, 1.0f, 1.0f };
-        obj.ray_intersect_fn = RayBoxIntersect;
-    }
-    #if 0
     {
         Object& obj{ objects.emplace_back() };
         obj.name = "Left Cube";
@@ -1420,7 +1406,6 @@ static void Entry()
         obj.albedo = { 1.0f, 1.0f, 1.0f };
         obj.ray_intersect_fn = RayBoxIntersect;
     }
-    #endif
     {
         Object& obj{ objects.emplace_back() };
         obj.name = "Floor";
@@ -1816,7 +1801,7 @@ static void Entry()
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->PSSetShader(ps_cube_shadow_map.Get(), nullptr, 0);
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
-                        d3d_ctx->RSSetState(rs_default.Get()); // TODO: slope scaled bias
+                        d3d_ctx->RSSetState(nullptr); // TODO: slope scaled bias
                         d3d_ctx->RSSetViewports(1, &viewport);
                     }
                 }
@@ -1886,18 +1871,12 @@ static void Entry()
                             {
                                 float fov_rad{ static_cast<float>(std::numbers::pi) / 2.0f };
                                 float aspect{ 1.0f };
-                                float near_plane{ 0.1f }; // TODO: hardcoded
-                                float far_plane{ 10.0f }; // TODO: hardcoded
 
                                 SubresourceMap map{ d3d_ctx.Get(), cb_scene.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                                 auto constants{ static_cast<SceneConstants*>(map.Data()) };
-                                // TODO: to be removed
-                                //constants->view = Matrix::CreateLookAt(point_light.position, point_light.position + view_directions[face_idx], view_ups[face_idx]);
                                 constants->view = DirectX::XMMatrixLookAtLH(point_light.position, point_light.position + view_directions[face_idx], view_ups[face_idx]);
-                                // TODO: to be removed
-                                //constants->projection = Matrix::CreatePerspectiveFieldOfView(fov_rad, aspect, near_plane, far_plane);
-                                constants->projection = DirectX::XMMatrixPerspectiveFovLH(fov_rad, aspect, near_plane, far_plane);
-                                constants->far_plane = far_plane;
+                                constants->projection = DirectX::XMMatrixPerspectiveFovLH(fov_rad, aspect, CUBE_SHADOW_MAP_NEAR, CUBE_SHADOW_MAP_FAR);
+                                constants->far_plane = CUBE_SHADOW_MAP_FAR; 
                             }
 
                             // render each object
@@ -2239,11 +2218,10 @@ static void Entry()
                     // prepare pipeline for drawing
                     {
                         ID3D11RenderTargetView* rtv{ frame_buffer.BackBufferRTV() };
-
+                        
                         d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0);
                         d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset());
-                        d3d_ctx->VSSetShader(vs.Get(), nullptr, 0);
                         d3d_ctx->RSSetState(rs_no_cull.Get());
                         d3d_ctx->PSSetShader(ps_skybox.Get(), nullptr, 0);
                         d3d_ctx->OMSetDepthStencilState(ds_no_depth.Get(), 0);
