@@ -1801,7 +1801,7 @@ static void Entry()
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->PSSetShader(ps_cube_shadow_map.Get(), nullptr, 0);
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
-                        d3d_ctx->RSSetState(nullptr); // TODO: slope scaled bias
+                        d3d_ctx->RSSetState(rs_no_cull.Get()); // TODO: slope scaled bias
                         d3d_ctx->RSSetViewports(1, &viewport);
                     }
                 }
