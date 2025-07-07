@@ -1203,7 +1203,24 @@ static void Entry()
         CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_default.ReleaseAndGetAddressOf()));
     }
 
-    // no backface culling rasterizer state
+    // rasterizer state used for rendering the cube shadow map
+    wrl::ComPtr<ID3D11RasterizerState> rs_cube_shadow_map{};
+    {
+        D3D11_RASTERIZER_DESC desc{};
+        desc.FillMode = D3D11_FILL_SOLID;
+        desc.CullMode = D3D11_CULL_NONE;
+        desc.FrontCounterClockwise = true;
+        desc.DepthBias = 0;
+        desc.DepthBiasClamp = 0.0f;
+        desc.SlopeScaledDepthBias = 0.0f;
+        desc.DepthClipEnable = true;
+        desc.ScissorEnable = false;
+        desc.MultisampleEnable = false;
+        desc.AntialiasedLineEnable = false;
+        CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_cube_shadow_map.ReleaseAndGetAddressOf()));
+    }
+
+    // rasterizer state with no culling enabled
     wrl::ComPtr<ID3D11RasterizerState> rs_no_cull{};
     {
         D3D11_RASTERIZER_DESC desc{};
@@ -1218,6 +1235,35 @@ static void Entry()
         desc.MultisampleEnable = false;
         desc.AntialiasedLineEnable = false;
         CheckHR(d3d_dev->CreateRasterizerState(&desc, rs_no_cull.ReleaseAndGetAddressOf()));
+    }
+
+    // cube shadow map sampler
+    wrl::ComPtr<ID3D11SamplerState> ss_cube_shadow_map{};
+    {
+        D3D11_SAMPLER_DESC desc{};
+        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+        //desc.ComparisonFunc = ;
+        desc.BorderColor[0] = 1.0f;
+        desc.MinLOD = 0.0f;
+        desc.MaxLOD = D3D11_FLOAT32_MAX;
+        CheckHR(d3d_dev->CreateSamplerState(&desc, ss_cube_shadow_map.ReleaseAndGetAddressOf()));
+    }
+
+    // skybox sampler
+    wrl::ComPtr<ID3D11SamplerState> ss_skybox{};
+    {
+        D3D11_SAMPLER_DESC desc{};
+        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
+        desc.BorderColor[0] = 1.0f;
+        desc.MinLOD = 0.0f;
+        desc.MaxLOD = D3D11_FLOAT32_MAX;
+        CheckHR(d3d_dev->CreateSamplerState(&desc, ss_skybox.ReleaseAndGetAddressOf()));
     }
 
     // blend state for summing
@@ -1311,35 +1357,6 @@ static void Entry()
         desc.MiscFlags = 0;
         desc.StructureByteStride = 0;
         CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, vb_line.ReleaseAndGetAddressOf()));
-    }
-
-    // cube shadow map sampler
-    wrl::ComPtr<ID3D11SamplerState> ss_cube_shadow_map{};
-    {
-        D3D11_SAMPLER_DESC desc{};
-        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-        desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
-        desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
-        desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-        //desc.ComparisonFunc = ;
-        desc.BorderColor[0] = 1.0f;
-        desc.MinLOD = 0.0f;
-        desc.MaxLOD = D3D11_FLOAT32_MAX;
-        CheckHR(d3d_dev->CreateSamplerState(&desc, ss_cube_shadow_map.ReleaseAndGetAddressOf()));
-    }
-
-    // skybox sampler
-    wrl::ComPtr<ID3D11SamplerState> ss_skybox{};
-    {
-        D3D11_SAMPLER_DESC desc{};
-        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-        desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
-        desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
-        desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-        desc.BorderColor[0] = 1.0f;
-        desc.MinLOD = 0.0f;
-        desc.MaxLOD = D3D11_FLOAT32_MAX;
-        CheckHR(d3d_dev->CreateSamplerState(&desc, ss_skybox.ReleaseAndGetAddressOf()));
     }
 
     // meshes
@@ -1801,7 +1818,7 @@ static void Entry()
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->PSSetShader(ps_cube_shadow_map.Get(), nullptr, 0);
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
-                        d3d_ctx->RSSetState(rs_no_cull.Get()); // TODO: slope scaled bias
+                        d3d_ctx->RSSetState(rs_cube_shadow_map.Get()); // TODO: slope scaled bias
                         d3d_ctx->RSSetViewports(1, &viewport);
                     }
                 }
