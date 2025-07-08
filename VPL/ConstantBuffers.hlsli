@@ -34,7 +34,8 @@ struct LightConstants
 struct ShadowConstants
 {
     float far_plane;
-    float _pad[3];
+    float bias;
+    float _pad[2];
 };
 
 #endif

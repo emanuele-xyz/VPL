@@ -111,6 +111,9 @@ constexpr int CUBE_MAP_FACES{ 6 };
 constexpr int CUBE_SHADOW_MAP_SIZE{ 1024 };
 constexpr float CUBE_SHADOW_MAP_NEAR{ 0.1f };
 constexpr float CUBE_SHADOW_MAP_FAR{ 10.0f };
+constexpr float CUBE_SHADOW_MAP_BIAS_START{ 0.05f };
+constexpr float CUBE_SHADOW_MAP_BIAS_MIN{ 0.0f };
+constexpr float CUBE_SHADOW_MAP_BIAS_MAX{ 1.0f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1241,7 +1244,7 @@ static void Entry()
     wrl::ComPtr<ID3D11SamplerState> ss_cube_shadow_map{};
     {
         D3D11_SAMPLER_DESC desc{};
-        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR; // TODO: point
         desc.AddressU = D3D11_TEXTURE_ADDRESS_BORDER;
         desc.AddressV = D3D11_TEXTURE_ADDRESS_BORDER;
         desc.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
@@ -1390,6 +1393,7 @@ static void Entry()
     int selected_light_index{ MIN_SELECTED_LIGHT_INDEX };
     int selected_vpl_type{ LIGHT_TYPE_POINT };
     bool draw_cube_shadow_map{};
+    float cube_shadow_map_bias{ CUBE_SHADOW_MAP_BIAS_START };
 
     // controls conficuration variables
     bool invert_camera_mouse_x{};
@@ -1664,6 +1668,7 @@ static void Entry()
                         mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                         selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                         selected_light_index = std::clamp(selected_light_index, MIN_SELECTED_LIGHT_INDEX, static_cast<int>(virtual_lights.size()) - 1);
+                        cube_shadow_map_bias = std::clamp(cube_shadow_map_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                     }
 
                     // start new light paths by shooting random rays from the point light
@@ -1913,6 +1918,7 @@ static void Entry()
                                 SubresourceMap map{ d3d_ctx.Get(), cb_shadow.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                                 auto constants{ static_cast<ShadowConstants*>(map.Data()) };
                                 constants->far_plane = CUBE_SHADOW_MAP_FAR;
+                                constants->bias = cube_shadow_map_bias;
                             }
 
                             // render each object
@@ -2316,6 +2322,7 @@ static void Entry()
                         if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen))
                         {
                             ImGui::Checkbox("Draw Shadow Map", &draw_cube_shadow_map);
+                            ImGui::DragFloat("Bias", &cube_shadow_map_bias, 0.001f, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {

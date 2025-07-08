@@ -32,7 +32,7 @@ float4 main(VSOutput input) : SV_TARGET
         float3 v = input.world_position - cb_light.world_position;
         float distance = length(v); // world space distance between the light and the fragment
         float sampled_distance = cube_shadow_map.Sample(shadow_sampler, v).x * cb_shadow.far_plane; // closest world space distance from the light, along L's direction
-        if (distance - 0.05 > sampled_distance)
+        if (distance - cb_shadow.bias > sampled_distance)
         {
             shadow = 0;
         }
