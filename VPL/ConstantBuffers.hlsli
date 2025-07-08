@@ -4,6 +4,7 @@
 #define LIGHT_TYPE_POINT 0
 #define LIGHT_TYPE_SIGN_COS_WEIGHTED 1
 #define LIGHT_TYPE_COS_WEIGHTED 2
+#define PCF_MAX_SAMPLES 21
 
 struct SceneConstants
 {
@@ -35,7 +36,8 @@ struct ShadowConstants
 {
     float far_plane;
     float bias;
-    float _pad[2];
+    int pcf_samples;
+    float disk_radius;
 };
 
 #endif
