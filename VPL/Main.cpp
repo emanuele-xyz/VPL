@@ -1346,6 +1346,19 @@ static void Entry()
         CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_light.ReleaseAndGetAddressOf()));
     }
 
+    // cube shadow map constant buffer
+    wrl::ComPtr<ID3D11Buffer> cb_shadow{};
+    {
+        D3D11_BUFFER_DESC desc{};
+        desc.ByteWidth = sizeof(ShadowConstants);
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        desc.MiscFlags = 0;
+        desc.StructureByteStride = 0;
+        CheckHR(d3d_dev->CreateBuffer(&desc, nullptr, cb_shadow.ReleaseAndGetAddressOf()));
+    }
+
     // line vertex buffer
     wrl::ComPtr<ID3D11Buffer> vb_line{};
     {
@@ -1809,7 +1822,7 @@ static void Entry()
 
                     // prepare pipeline for drawing
                     {
-                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get() };
+                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get(), cb_shadow.Get() };
 
                         d3d_ctx->ClearState();
                         d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1893,7 +1906,13 @@ static void Entry()
                                 auto constants{ static_cast<SceneConstants*>(map.Data()) };
                                 constants->view = DirectX::XMMatrixLookAtLH(point_light.position, point_light.position + view_directions[face_idx], view_ups[face_idx]);
                                 constants->projection = DirectX::XMMatrixPerspectiveFovLH(fov_rad, aspect, CUBE_SHADOW_MAP_NEAR, CUBE_SHADOW_MAP_FAR);
-                                constants->far_plane = CUBE_SHADOW_MAP_FAR; 
+                            }
+
+                            // upload shadow constants
+                            {
+                                SubresourceMap map{ d3d_ctx.Get(), cb_shadow.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
+                                auto constants{ static_cast<ShadowConstants*>(map.Data()) };
+                                constants->far_plane = CUBE_SHADOW_MAP_FAR;
                             }
 
                             // render each object
@@ -1944,7 +1963,7 @@ static void Entry()
                     // prepare pipeline for drawing
                     {
                         ID3D11RenderTargetView* rtv{ frame_buffer.BackBufferRTV() };
-                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get() };
+                        ID3D11Buffer* cbufs[]{ cb_scene.Get(), cb_object.Get(), cb_light.Get(), cb_shadow.Get() };
                         ID3D11ShaderResourceView* srvs[]{ cube_shadow_map.SRV() };
                         ID3D11SamplerState* sss[]{ ss_cube_shadow_map.Get(), ss_skybox.Get() };
 

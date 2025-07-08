@@ -33,6 +33,11 @@ cbuffer CBLight : register(b2)
     LightConstants cb_light;
 };
 
+cbuffer CBShadow : register(b3)
+{
+    ShadowConstants cb_shadow;
+};
+
 TextureCube cube_shadow_map : register(t0);
 
 SamplerState shadow_sampler : register(s0);

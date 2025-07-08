@@ -9,7 +9,7 @@ struct PSOut
 PSOut main(VSOutput input)
 {
     float d = length(input.world_position - cb_light.world_position); // world space distance between fragment and light
-    d = d / cb_scene.far_plane; // map the distance to the [0;1] range
+    d = d / cb_shadow.far_plane; // map the distance to the [0;1] range
     
     PSOut output;
     output.color = float4(0, 0, 0, 1);

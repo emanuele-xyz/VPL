@@ -31,7 +31,7 @@ float4 main(VSOutput input) : SV_TARGET
     {
         float3 v = input.world_position - cb_light.world_position;
         float distance = length(v); // world space distance between the light and the fragment
-        float sampled_distance = cube_shadow_map.Sample(shadow_sampler, v).x * cb_scene.far_plane; // closest world space distance from the light, along L's direction
+        float sampled_distance = cube_shadow_map.Sample(shadow_sampler, v).x * cb_shadow.far_plane; // closest world space distance from the light, along L's direction
         if (distance - 0.05 > sampled_distance)
         {
             shadow = 0;
@@ -48,7 +48,7 @@ float4 main(VSOutput input) : SV_TARGET
     
     float3 color = diffuse * light * NdotL; // rendering equation
     
-    color /= cb_scene.particles_count; // abiding by Keller, each frame is weighted by the number of particles // TODO: we should enable this
+    color /= cb_scene.particles_count; // abiding by Keller, each frame is weighted by the number of particles
     
     return float4(color, 1.0);
 }
