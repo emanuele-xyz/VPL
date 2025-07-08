@@ -117,9 +117,9 @@ constexpr float CUBE_SHADOW_MAP_BIAS_MAX{ 1.0f };
 constexpr int CUBE_SHADOW_MAP_PCF_SAMPLES_START{ 4 };
 constexpr int CUBE_SHADOW_MAP_PCF_SAMPLES_MIN{ 1 };
 constexpr int CUBE_SHADOW_MAP_PCF_SAMPLES_MAX{ PCF_MAX_SAMPLES };
-constexpr float CUBE_SHADOW_MAP_PCF_DISK_RADIUS_START{ 0.005f };
-constexpr float CUBE_SHADOW_MAP_PCF_DISK_RADIUS_MIN{ 0.0f };
-constexpr float CUBE_SHADOW_MAP_PCF_DISK_RADIUS_MAX{ 1.0f };
+constexpr float CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_START{ 0.005f };
+constexpr float CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MIN{ 0.0f };
+constexpr float CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MAX{ 1.0f };
 
 // ----------------------------------------------------------------------------
 // Custom Assertions
@@ -1401,7 +1401,7 @@ static void Entry()
     bool draw_cube_shadow_map{};
     float cube_shadow_map_bias{ CUBE_SHADOW_MAP_BIAS_START };
     int pcf_samples{ CUBE_SHADOW_MAP_PCF_SAMPLES_START };
-    float pcf_disk_radius{ CUBE_SHADOW_MAP_PCF_DISK_RADIUS_START };
+    float pcf_offset_scale{ CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_START };
 
     // controls conficuration variables
     bool invert_camera_mouse_x{};
@@ -1678,7 +1678,7 @@ static void Entry()
                         selected_light_index = std::clamp(selected_light_index, MIN_SELECTED_LIGHT_INDEX, static_cast<int>(virtual_lights.size()) - 1);
                         cube_shadow_map_bias = std::clamp(cube_shadow_map_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                         pcf_samples = std::clamp(pcf_samples, CUBE_SHADOW_MAP_PCF_SAMPLES_MIN, CUBE_SHADOW_MAP_PCF_SAMPLES_MAX);
-                        pcf_disk_radius = std::clamp(pcf_disk_radius, CUBE_SHADOW_MAP_PCF_DISK_RADIUS_MIN, CUBE_SHADOW_MAP_PCF_DISK_RADIUS_MAX);
+                        pcf_offset_scale = std::clamp(pcf_offset_scale, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MIN, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MAX);
                     }
 
                     // start new light paths by shooting random rays from the point light
@@ -1930,7 +1930,7 @@ static void Entry()
                                 constants->far_plane = CUBE_SHADOW_MAP_FAR;
                                 constants->bias = cube_shadow_map_bias;
                                 constants->pcf_samples = pcf_samples;
-                                constants->disk_radius = pcf_disk_radius;
+                                constants->offset_scale = pcf_offset_scale;
                             }
 
                             // render each object
@@ -2336,7 +2336,7 @@ static void Entry()
                             ImGui::Checkbox("Draw Shadow Map", &draw_cube_shadow_map);
                             ImGui::DragFloat("Bias", &cube_shadow_map_bias, 0.001f, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                             ImGui::DragInt("PCF Samples", &pcf_samples, 1.0f, CUBE_SHADOW_MAP_PCF_SAMPLES_MIN, CUBE_SHADOW_MAP_PCF_SAMPLES_MAX);
-                            ImGui::DragFloat("PCF Disk Radius", &pcf_disk_radius, 0.001f, CUBE_SHADOW_MAP_PCF_DISK_RADIUS_MIN, CUBE_SHADOW_MAP_PCF_DISK_RADIUS_MAX);
+                            ImGui::DragFloat("PCF Offset Scale", &pcf_offset_scale, 0.001f, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MIN, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MAX);
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
                         {

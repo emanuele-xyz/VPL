@@ -37,7 +37,7 @@ struct ShadowConstants
     float far_plane;
     float bias;
     int pcf_samples;
-    float disk_radius;
+    float offset_scale;
 };
 
 #endif

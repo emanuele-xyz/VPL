@@ -48,7 +48,7 @@ float4 main(VSOutput input) : SV_TARGET
         for (int i = 0; i < cb_shadow.pcf_samples; i++)
         {
             // closest world space distance from the light, along v's direction
-            float sampled_distance = cube_shadow_map.Sample(shadow_sampler, v + offsets[i] * cb_shadow.disk_radius).r;
+            float sampled_distance = cube_shadow_map.Sample(shadow_sampler, v + offsets[i] * cb_shadow.offset_scale).r;
             sampled_distance *= cb_shadow.far_plane; // undo [0;1] mapping
             if (distance - cb_shadow.bias > sampled_distance)
             {
