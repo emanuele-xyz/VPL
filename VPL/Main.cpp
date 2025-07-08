@@ -1831,7 +1831,7 @@ static void Entry()
                         d3d_ctx->VSSetConstantBuffers(0, std::size(cbufs), cbufs);
                         d3d_ctx->PSSetShader(ps_cube_shadow_map.Get(), nullptr, 0);
                         d3d_ctx->PSSetConstantBuffers(0, std::size(cbufs), cbufs);
-                        d3d_ctx->RSSetState(rs_cube_shadow_map.Get()); // TODO: slope scaled bias
+                        d3d_ctx->RSSetState(rs_cube_shadow_map.Get());
                         d3d_ctx->RSSetViewports(1, &viewport);
                     }
                 }
@@ -2254,7 +2254,7 @@ static void Entry()
                     // prepare pipeline for drawing
                     {
                         ID3D11RenderTargetView* rtv{ frame_buffer.BackBufferRTV() };
-                        
+
                         d3d_ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                         d3d_ctx->IASetIndexBuffer(cube_mesh.Indices(), cube_mesh.IndexFormat(), 0);
                         d3d_ctx->IASetVertexBuffers(0, 1, cube_mesh.Vertices(), cube_mesh.Stride(), cube_mesh.Offset());
@@ -2312,6 +2312,9 @@ static void Entry()
                                 const char* vpl_type_descs[]{ "Point", "Sign Cosine Weighted", "Cosine Weighted" };
                                 ImGui::Combo("VPL Type", &selected_vpl_type, vpl_type_descs, std::size(vpl_type_descs));
                             }
+                        }
+                        if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
                             ImGui::Checkbox("Draw Shadow Map", &draw_cube_shadow_map);
                         }
                         if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
