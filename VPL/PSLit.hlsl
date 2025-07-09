@@ -29,38 +29,6 @@ float4 main(VSOutput input) : SV_TARGET
     
     light *= light_weight; // weight light based on light type
     
-    float shadow = 0;
-    {
-        // offsets used for PCF sampling
-        float3 offsets[PCF_MAX_SAMPLES] =
-        {
-            float3(+0, +0, +0),
-            float3(+1, +1, +1), float3(+1, -1, +1), float3(-1, -1, +1), float3(-1, +1, +1),
-            float3(+1, +1, -1), float3(+1, -1, -1), float3(-1, -1, -1), float3(-1, +1, -1),
-            float3(+1, +1, +0), float3(+1, -1, +0), float3(-1, -1, +0), float3(-1, +1, +0),
-            float3(+1, +0, +1), float3(-1, +0, +1), float3(+1, +0, -1), float3(-1, +0, -1),
-            float3(+0, +1, +1), float3(+0, -1, +1), float3(+0, -1, -1), float3(+0, +1, -1),
-        };
-        
-        float3 v = input.world_position - cb_light.world_position;
-        float distance = length(v); // world space distance between the light and the fragment
-        float bias = cb_shadow.static_bias + cb_shadow.max_dynamic_bias * (1 - NdotL); // compute bias
-        
-        for (int i = 0; i < cb_shadow.pcf_samples; i++)
-        {
-            // closest world space distance from the light, along v's direction
-            float sampled_distance = cube_shadow_map.Sample(shadow_sampler, v + offsets[i] * cb_shadow.offset_scale).r;
-            sampled_distance *= cb_shadow.far_plane; // undo [0;1] mapping
-            if (distance - bias > sampled_distance)
-            {
-                shadow += 1; // count the number of samples that pass the test
-            }
-        }
-        shadow /= float(cb_shadow.pcf_samples); // normalize the number of samples that passed the test by the number of total samples
-    }
-    
-    light = (1 - shadow) * light; // weight light using the shadow factor
-    
     float3 color = diffuse * light * NdotL; // rendering equation
     color /= cb_scene.particles_count; // abiding by Keller, each frame is weighted by the number of particles
     

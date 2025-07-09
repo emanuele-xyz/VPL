@@ -38,6 +38,7 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 #include "VS.h"
 #include "PSFlat.h"
 #include "PSLit.h"
+#include "PSShadowed.h"
 #include "PSPointLight.h"
 #include "PSCubeShadowMap.h"
 #include "PSSkybox.h"
@@ -1178,6 +1179,8 @@ static void Entry()
     CheckHR(d3d_dev->CreatePixelShader(PSFlat_bytes, sizeof(PSFlat_bytes), nullptr, ps_flat.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_lit{};
     CheckHR(d3d_dev->CreatePixelShader(PSLit_bytes, sizeof(PSLit_bytes), nullptr, ps_lit.ReleaseAndGetAddressOf()));
+    wrl::ComPtr<ID3D11PixelShader> ps_shadowed{};
+    CheckHR(d3d_dev->CreatePixelShader(PSShadowed_bytes, sizeof(PSShadowed_bytes), nullptr, ps_shadowed.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_point_light{};
     CheckHR(d3d_dev->CreatePixelShader(PSPointLight_bytes, sizeof(PSPointLight_bytes), nullptr, ps_point_light.ReleaseAndGetAddressOf()));
     wrl::ComPtr<ID3D11PixelShader> ps_cube_shadow_map{};
@@ -2067,9 +2070,21 @@ static void Entry()
                             }
 
                             // set pipeline state
-                            d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
-                            d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
-                            d3d_ctx->PSSetShader(ps_lit.Get(), nullptr, 0);
+                            {
+                                // set pipeline state
+                                d3d_ctx->IASetIndexBuffer(obj.mesh->Indices(), obj.mesh->IndexFormat(), 0);
+                                d3d_ctx->IASetVertexBuffers(0, 1, obj.mesh->Vertices(), obj.mesh->Stride(), obj.mesh->Offset());
+
+                                // if we are lighting the scene using the main point light, then also render shadows
+                                if (i == POINT_LIGHT_INDEX)
+                                {
+                                    d3d_ctx->PSSetShader(ps_shadowed.Get(), nullptr, 0);
+                                }
+                                else // otherwise, if lighting the scene using a VPL, don't render any shadows
+                                {
+                                    d3d_ctx->PSSetShader(ps_lit.Get(), nullptr, 0);
+                                }
+                            }
 
                             // draw
                             d3d_ctx->DrawIndexed(obj.mesh->IndexCount(), 0, 0);

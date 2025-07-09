@@ -366,6 +366,7 @@ FodyWeavers.xsd
 VS.h
 PSFlat.h
 PSLit.h
+PSShadowed.h
 PSPointLight.h
 PSCubeShadowMap.h
 PSSkybox.h
