@@ -111,7 +111,8 @@ constexpr int CUBE_MAP_FACES{ 6 };
 constexpr int CUBE_SHADOW_MAP_SIZE{ 1024 };
 constexpr float CUBE_SHADOW_MAP_NEAR{ 0.1f };
 constexpr float CUBE_SHADOW_MAP_FAR{ 10.0f };
-constexpr float CUBE_SHADOW_MAP_BIAS_START{ 0.05f };
+constexpr float CUBE_SHADOW_MAP_STATIC_BIAS_START{ 0.01f };
+constexpr float CUBE_SHADOW_MAP_MAX_DYNAMIC_BIAS_START{ 0.1f };
 constexpr float CUBE_SHADOW_MAP_BIAS_MIN{ 0.0f };
 constexpr float CUBE_SHADOW_MAP_BIAS_MAX{ 1.0f };
 constexpr int CUBE_SHADOW_MAP_PCF_SAMPLES_START{ 4 };
@@ -1399,7 +1400,8 @@ static void Entry()
     int selected_light_index{ MIN_SELECTED_LIGHT_INDEX };
     int selected_vpl_type{ LIGHT_TYPE_POINT };
     bool draw_cube_shadow_map{};
-    float cube_shadow_map_bias{ CUBE_SHADOW_MAP_BIAS_START };
+    float cube_shadow_map_static_bias{ CUBE_SHADOW_MAP_STATIC_BIAS_START };
+    float cube_shadow_map_max_dynamic_bias{ CUBE_SHADOW_MAP_MAX_DYNAMIC_BIAS_START };
     int pcf_samples{ CUBE_SHADOW_MAP_PCF_SAMPLES_START };
     float pcf_offset_scale{ CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_START };
 
@@ -1676,7 +1678,8 @@ static void Entry()
                         mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                         selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                         selected_light_index = std::clamp(selected_light_index, MIN_SELECTED_LIGHT_INDEX, static_cast<int>(virtual_lights.size()) - 1);
-                        cube_shadow_map_bias = std::clamp(cube_shadow_map_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
+                        cube_shadow_map_static_bias = std::clamp(cube_shadow_map_static_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX) ;
+                        cube_shadow_map_max_dynamic_bias = std::clamp(cube_shadow_map_max_dynamic_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                         pcf_samples = std::clamp(pcf_samples, CUBE_SHADOW_MAP_PCF_SAMPLES_MIN, CUBE_SHADOW_MAP_PCF_SAMPLES_MAX);
                         pcf_offset_scale = std::clamp(pcf_offset_scale, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MIN, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MAX);
                     }
@@ -1928,7 +1931,8 @@ static void Entry()
                                 SubresourceMap map{ d3d_ctx.Get(), cb_shadow.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                                 auto constants{ static_cast<ShadowConstants*>(map.Data()) };
                                 constants->far_plane = CUBE_SHADOW_MAP_FAR;
-                                constants->bias = cube_shadow_map_bias;
+                                constants->static_bias = cube_shadow_map_static_bias;
+                                constants->max_dynamic_bias = cube_shadow_map_max_dynamic_bias;
                                 constants->pcf_samples = pcf_samples;
                                 constants->offset_scale = pcf_offset_scale;
                             }
@@ -2334,7 +2338,8 @@ static void Entry()
                         if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen))
                         {
                             ImGui::Checkbox("Draw Shadow Map", &draw_cube_shadow_map);
-                            ImGui::DragFloat("Bias", &cube_shadow_map_bias, 0.001f, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
+                            ImGui::DragFloat("Static Bias", &cube_shadow_map_static_bias, 0.001f, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
+                            ImGui::DragFloat("Max Dynamic Bias", &cube_shadow_map_max_dynamic_bias, 0.001f, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                             ImGui::DragInt("PCF Samples", &pcf_samples, 1.0f, CUBE_SHADOW_MAP_PCF_SAMPLES_MIN, CUBE_SHADOW_MAP_PCF_SAMPLES_MAX);
                             ImGui::DragFloat("PCF Offset Scale", &pcf_offset_scale, 0.001f, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MIN, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MAX);
                         }

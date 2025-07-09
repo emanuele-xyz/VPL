@@ -44,13 +44,14 @@ float4 main(VSOutput input) : SV_TARGET
         
         float3 v = input.world_position - cb_light.world_position;
         float distance = length(v); // world space distance between the light and the fragment
+        float bias = cb_shadow.static_bias + cb_shadow.max_dynamic_bias * (1 - NdotL); // compute bias
         
         for (int i = 0; i < cb_shadow.pcf_samples; i++)
         {
             // closest world space distance from the light, along v's direction
             float sampled_distance = cube_shadow_map.Sample(shadow_sampler, v + offsets[i] * cb_shadow.offset_scale).r;
             sampled_distance *= cb_shadow.far_plane; // undo [0;1] mapping
-            if (distance - cb_shadow.bias > sampled_distance)
+            if (distance - bias > sampled_distance)
             {
                 shadow += 1; // count the number of samples that pass the test
             }

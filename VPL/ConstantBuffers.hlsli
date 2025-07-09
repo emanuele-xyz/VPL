@@ -35,9 +35,11 @@ struct LightConstants
 struct ShadowConstants
 {
     float far_plane;
-    float bias;
+    float static_bias;
+    float max_dynamic_bias;
     int pcf_samples;
     float offset_scale;
+    float _pad[3];
 };
 
 #endif
