@@ -351,6 +351,8 @@ float GetElapsedSec(LARGE_INTEGER t0, LARGE_INTEGER t1, LARGE_INTEGER frequency)
     return elapsed_sec;
 }
 
+// 💀 Skibidi 💀
+
 // ----------------------------------------------------------------------------
 // Vertex Definition
 // ----------------------------------------------------------------------------
@@ -1128,7 +1130,7 @@ static Vector3 CompensateVPLColor(int particles_count, float mean_reflectivity, 
     */
     // NOTE: here should we use as exponent bounce? or bounce+1?
     // NOTE: if we use bounce+1 the denominator may become zero!
-    float num{ static_cast<float> (particles_count) };
+    float num{ static_cast<float>(particles_count) };
     float den{ static_cast<float>(std::floor(std::pow(mean_reflectivity, bounce) * particles_count)) };
     Vector3 compensated_color{};
     float compensation{ num / den };
@@ -1408,7 +1410,7 @@ static void Entry()
     int pcf_samples{ CUBE_SHADOW_MAP_PCF_SAMPLES_START };
     float pcf_offset_scale{ CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_START };
 
-    // controls conficuration variables
+    // controls configuration variables
     bool invert_camera_mouse_x{};
     bool invert_camera_mouse_y{};
 
@@ -1681,7 +1683,7 @@ static void Entry()
                         mean_reflectivity = std::clamp(mean_reflectivity, MEAN_REFLECTIVITY_MIN, MEAN_REFLECTIVITY_MAX);
                         selected_light_path_index = std::clamp(selected_light_path_index, MIN_SELECTED_LIGHT_PATH_INDEX, static_cast<int>(light_paths.size()) - 1);
                         selected_light_index = std::clamp(selected_light_index, MIN_SELECTED_LIGHT_INDEX, static_cast<int>(virtual_lights.size()) - 1);
-                        cube_shadow_map_static_bias = std::clamp(cube_shadow_map_static_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX) ;
+                        cube_shadow_map_static_bias = std::clamp(cube_shadow_map_static_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                         cube_shadow_map_max_dynamic_bias = std::clamp(cube_shadow_map_max_dynamic_bias, CUBE_SHADOW_MAP_BIAS_MIN, CUBE_SHADOW_MAP_BIAS_MAX);
                         pcf_samples = std::clamp(pcf_samples, CUBE_SHADOW_MAP_PCF_SAMPLES_MIN, CUBE_SHADOW_MAP_PCF_SAMPLES_MAX);
                         pcf_offset_scale = std::clamp(pcf_offset_scale, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MIN, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MAX);
@@ -2047,7 +2049,7 @@ static void Entry()
                         if (i == 0 || selected_light_index > MIN_SELECTED_LIGHT_INDEX)
                         {
                             d3d_ctx->OMSetBlendState(nullptr, nullptr, 0XFFFFFFFF); // default blend state
-                            d3d_ctx->OMSetDepthStencilState(nullptr, 0); // default blend state
+                            d3d_ctx->OMSetDepthStencilState(nullptr, 0); // default depth stencil state
                         }
                         else // we need to accumulate the currently rendered frame into the back buffer
                         {
@@ -2094,7 +2096,7 @@ static void Entry()
                     // from this point onwards, we use the default blend state and depth stencil state
                     {
                         d3d_ctx->OMSetBlendState(nullptr, nullptr, 0XFFFFFFFF); // default blend state
-                        d3d_ctx->OMSetDepthStencilState(nullptr, 0); // default blend state
+                        d3d_ctx->OMSetDepthStencilState(nullptr, 0); // default depth stencil state
                     }
 
                     // render main point light (only if we are rendering the final frame or we have selected the point light)
@@ -2266,7 +2268,7 @@ static void Entry()
                             SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                             auto vertices{ static_cast<Vertex*>(map.Data()) };
                             vertices[0] = { .position = { vpl.position} };
-                            vertices[1] = { .position = { vpl.position + LINE_NORMAL_T * vpl.normal} };
+                            vertices[1] = { .position = { vpl.position + LINE_NORMAL_T * vpl.normal} }; // x(t) = o + t * d
                         }
 
                         // set pipeline state
