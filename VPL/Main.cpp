@@ -351,6 +351,43 @@ float GetElapsedSec(LARGE_INTEGER t0, LARGE_INTEGER t1, LARGE_INTEGER frequency)
     return elapsed_sec;
 }
 
+// ----------------------------------------------------------------------------
+// Timer
+// ----------------------------------------------------------------------------
+
+class Timer
+{
+public:
+    Timer();
+public:
+    void Start();
+    void End();
+    float DeltaSec();
+private:
+    LARGE_INTEGER m_freq;
+    LARGE_INTEGER m_t0;
+    LARGE_INTEGER m_t1;
+};
+
+Timer::Timer()
+    : m_freq{ GetWin32PerformanceFrequency() }
+    , m_t0{}
+    , m_t1{}
+{
+}
+void Timer::Start()
+{
+    m_t0 = GetWin32PerformanceCounter();
+}
+void Timer::End()
+{
+    m_t1 = GetWin32PerformanceCounter();
+}
+float Timer::DeltaSec()
+{
+    return GetElapsedSec(m_t0, m_t1, m_freq);
+}
+
 // 💀 Skibidi 💀
 
 // ----------------------------------------------------------------------------
@@ -1553,6 +1590,9 @@ static void Entry()
     float frame_t_sec{};
     float frame_dt_sec{};
 
+    Timer particle_sim_timer{};
+    Timer rendering_timer{};
+
     // main loop
     {
         MSG msg{};
@@ -1688,6 +1728,8 @@ static void Entry()
                         pcf_samples = std::clamp(pcf_samples, CUBE_SHADOW_MAP_PCF_SAMPLES_MIN, CUBE_SHADOW_MAP_PCF_SAMPLES_MAX);
                         pcf_offset_scale = std::clamp(pcf_offset_scale, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MIN, CUBE_SHADOW_MAP_PCF_OFFSET_SCALE_MAX);
                     }
+
+                    particle_sim_timer.Start();
 
                     // start new light paths by shooting random rays from the point light
                     {
@@ -1836,6 +1878,10 @@ static void Entry()
                         }
                     }
                 }
+                
+                particle_sim_timer.End();
+
+                rendering_timer.Start();
 
                 // prepare cube shaodw map render
                 {
@@ -2136,6 +2182,8 @@ static void Entry()
                     }
                 }
 
+                rendering_timer.End();
+
                 // render visualizations
                 {
                     // render VPLs
@@ -2335,6 +2383,8 @@ static void Entry()
                             ImGui::Text("Time: %.1f sec", frame_t_sec);
                             ImGui::Text("Delta Time: %.3f sec", frame_dt_sec);
                             ImGui::Text("Delta Time: %.2f msec", frame_dt_sec * 1000.0f);
+                            ImGui::Text("Particle Simulation: %.2f msec", particle_sim_timer.DeltaSec() * 1000.0f);
+                            ImGui::Text("Rendering: %.2f msec", rendering_timer.DeltaSec() * 1000.0f);
                         }
                         if (ImGui::CollapsingHeader("Configuration", ImGuiTreeNodeFlags_DefaultOpen))
                         {
@@ -2424,7 +2474,7 @@ static void Entry()
 
                 // present
                 {
-                    CheckHR(swap_chain->Present(1, 0)); // use vsync
+                    CheckHR(swap_chain->Present(0, 0)); // use vsync
                 }
 
                 // update frame time data
