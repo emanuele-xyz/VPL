@@ -62,7 +62,6 @@ using Quaternion = DirectX::SimpleMath::Quaternion;
 
 // D3D11
 #pragma comment(lib, "d3d11")
-#pragma comment(lib, "d3dcompiler")
 #pragma comment(lib, "dxgi")
 #pragma comment(lib, "dxguid")
 
@@ -387,8 +386,6 @@ float Timer::DeltaSec()
 {
     return GetElapsedSec(m_t0, m_t1, m_freq);
 }
-
-// 💀 Skibidi 💀
 
 // ----------------------------------------------------------------------------
 // Vertex Definition
@@ -984,7 +981,7 @@ static RayHit RayBoxIntersect(Ray ray, const Matrix& model, const Matrix& normal
         - we intersect the ray with the second slab, finding an interval for t
         - we intersect the ray with the third slab, finding an interval for t
 
-        if the intersection of the found intervals is not empty, we have an intersection point at p(t)
+        if the intersection of the found intervals is not empty, we have an intersection
     */
 
     RayHit hit{};
@@ -1149,7 +1146,6 @@ struct VirtualLight
 
 static Vector3 CompensateVPLColor(int particles_count, float mean_reflectivity, int bounce, Vector3 color)
 {
-    // TODO: revise this
     /*
         Keller corrects each VPL color multiplying it by N / floor(w), where
         - N is the number of particles/rays we shot from the light source
@@ -1162,25 +1158,17 @@ static Vector3 CompensateVPLColor(int particles_count, float mean_reflectivity, 
         Instead, we simply shot N rays from it.
         These N rays will hit something.
         These hits are considered to be at bounce zero.
-        Thus, for our implementation to adhere to Keller's, our compensation needs to use as exponent bounce+1 instead of bounce.
-        NOTE: is this right? I don't think so!
     */
-    // NOTE: here should we use as exponent bounce? or bounce+1?
-    // NOTE: if we use bounce+1 the denominator may become zero!
     float num{ static_cast<float>(particles_count) };
     float den{ static_cast<float>(std::floor(std::pow(mean_reflectivity, bounce) * particles_count)) };
-    Vector3 compensated_color{};
-    float compensation{ num / den };
     Check(den != 0.0f);
-    //if (den != 0.0f)
-    {
-        compensated_color = compensation * color;
-    }
+    float compensation{ num / den };
+    Vector3 compensated_color = compensation * color;
     return compensated_color;
 }
 
 // ----------------------------------------------------------------------------
-// Application's Entry Point (may throw an exception)
+// Application Entry Point
 // ----------------------------------------------------------------------------
 
 static void Entry()
@@ -1230,7 +1218,7 @@ static void Entry()
     // input layout
     wrl::ComPtr<ID3D11InputLayout> input_layout{};
     {
-        D3D11_INPUT_ELEMENT_DESC desc[] =
+        D3D11_INPUT_ELEMENT_DESC desc[]
         {
             { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
             { "NORMAL",   0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
@@ -1878,7 +1866,7 @@ static void Entry()
                         }
                     }
                 }
-                
+
                 particle_sim_timer.End();
 
                 rendering_timer.Start();
@@ -1960,7 +1948,7 @@ static void Entry()
                     {
                         // render the scene
                         {
-                            // clear color buffer and depth buffer
+                            // clear depth buffer
                             d3d_ctx->ClearDepthStencilView(cube_shadow_map.DSVs(face_idx), D3D11_CLEAR_DEPTH, 1.0f, 0);
 
                             // set cube shadow map side as depth buffer
@@ -2088,7 +2076,7 @@ static void Entry()
                             constants->color = light.color;
                             constants->normal = light.normal;
                             constants->intensity = point_light.intenisty;
-                            constants->type = i == POINT_LIGHT_INDEX ? LIGHT_TYPE_POINT : selected_vpl_type;
+                            constants->type = (i == POINT_LIGHT_INDEX) ? LIGHT_TYPE_POINT : selected_vpl_type;
                         }
 
                         // it is the first frame we render, or we only want to render the contribution of a single virtual light
@@ -2245,7 +2233,7 @@ static void Entry()
                         {
                             LightPathNode node{ light_path[j] };
 
-                            // if the current light path segment is a valid, render it
+                            // if the current light path segment is valid, render it
                             if (i < static_cast<int>(std::pow(mean_reflectivity, j) * particles_count))
                             {
                                 bool is_lost{ !node.hit.valid }; // has the light path segment been lost?
@@ -2316,7 +2304,7 @@ static void Entry()
                             SubresourceMap map{ d3d_ctx.Get(), vb_line.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0 };
                             auto vertices{ static_cast<Vertex*>(map.Data()) };
                             vertices[0] = { .position = { vpl.position} };
-                            vertices[1] = { .position = { vpl.position + LINE_NORMAL_T * vpl.normal} }; // x(t) = o + t * d
+                            vertices[1] = { .position = { vpl.position + LINE_NORMAL_T * vpl.normal} };
                         }
 
                         // set pipeline state
@@ -2474,7 +2462,7 @@ static void Entry()
 
                 // present
                 {
-                    CheckHR(swap_chain->Present(0, 0)); // use vsync
+                    CheckHR(swap_chain->Present(1, 0)); // use vsync
                 }
 
                 // update frame time data
@@ -2495,43 +2483,6 @@ static void Entry()
 
 int main()
 {
-    // TODO: this should be removed
-    {
-        int renders{};
-
-        constexpr int N{ 10 };
-        constexpr float rho{ 0.25 }; // mean reflectivity
-        constexpr int M{ static_cast<int>((1.0 / (1 - rho)) * N) };
-
-        double w{}, start{};
-        int end{}, reflections{};
-
-        start = end = N;
-
-        while (end > 0)
-        {
-            start *= rho;
-
-            std::println("start: {} - end: {}", static_cast<int>(start), end);
-            for (int i{ static_cast<int>(start) }; i < end; i++)
-            {
-                w = N;
-
-                for (int j{}; j <= reflections; j++)
-                {
-                    std::println("render scene - particle={}, j={}, L={}/{}", i, j, N, std::floor(w));
-                    w *= rho;
-
-                    renders++;
-                }
-            }
-
-            reflections++;
-            end = static_cast<int>(start);
-        }
-        std::println("total renders: {} - M: {}", renders, M);
-    }
-
     try
     {
         Entry();
